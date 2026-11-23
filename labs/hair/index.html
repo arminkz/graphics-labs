@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hair Rendering Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport with a lobe strip, instrument panel on the right; stacks on narrow screens. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #e3b563;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 360px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas#c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas#c:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.82); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 120px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 10px; }
+.fiber { display: block; width: 100%; height: auto; margin-top: 8px; background: #0f1217; border: 1px solid var(--line); border-radius: 6px; }
+.kcap { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.row { display: grid; grid-template-columns: 104px 1fr 62px; align-items: center; gap: 8px; margin: 5px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+.dim { opacity: .45; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL render of a bust with strand-based hair"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudTech">model</span>
+      <span class="chip" id="hudGeo">strands</span>
+      <span class="chip" id="hudTime">GPU</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll or pinch to zoom · right-drag to pan</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Hair rendering lab</h1>
+      <p class="sub">Hair is thousands of thin, shiny, translucent cylinders. That breaks three habits from surface rendering: there is no surface normal, light passes through the fibers, and the strands shadow each other like a volume.</p>
+    </div>
+
+    <section>
+      <h2>1. Shading model</h2>
+      <select id="model" aria-label="Hair shading model">
+        <option value="0">Surface shading: the plastic helmet</option>
+        <option value="1">Kajiya–Kay (1989): shade by tangent</option>
+        <option value="2" selected>Marschner (2003): R + TT + TRT</option>
+      </select>
+      <div class="explain" id="explain"></div>
+      <svg class="fiber" viewBox="0 0 340 140" role="img" aria-label="Cross-section of a hair fiber with the three light paths R, TT and TRT">
+        <circle cx="170" cy="70" r="40" fill="#3a2a1c" stroke="#8a6a44" stroke-width="1"/>
+        <line x1="30" y1="52" x2="131" y2="61" stroke="#dfe3ea" stroke-width="1.5"/>
+        <line x1="131" y1="61" x2="52" y2="18" stroke="#ffffff" stroke-width="1.8"/>
+        <line x1="131" y1="61" x2="208" y2="81" stroke="#e3b563" stroke-width="1.2" stroke-dasharray="4 3"/>
+        <line x1="208" y1="81" x2="300" y2="96" stroke="#ffcf7a" stroke-width="1.8"/>
+        <line x1="208" y1="81" x2="155" y2="107" stroke="#e3b563" stroke-width="1.2" stroke-dasharray="4 3"/>
+        <line x1="155" y1="107" x2="92" y2="130" stroke="#d98a4a" stroke-width="1.8"/>
+        <text x="30" y="46" fill="#8a93a3" font-size="11" font-family="IBM Plex Mono, monospace">light</text>
+        <text x="58" y="16" fill="#ffffff" font-size="11" font-family="IBM Plex Mono, monospace">R</text>
+        <text x="304" y="100" fill="#ffcf7a" font-size="11" font-family="IBM Plex Mono, monospace">TT</text>
+        <text x="62" y="134" fill="#d98a4a" font-size="11" font-family="IBM Plex Mono, monospace">TRT</text>
+      </svg>
+      <div class="kcap">A fiber seen end-on. R bounces off the outside (white). TT goes through (bright when the light is behind). TRT bounces once inside and comes back tinted by the hair's pigment.</div>
+      <div class="checks" id="lobes">
+        <label><input type="checkbox" id="lobeR" checked> R: primary highlight</label>
+        <label><input type="checkbox" id="lobeTT" checked> TT: transmission (back-light glow)</label>
+        <label><input type="checkbox" id="lobeTRT" checked> TRT: colored secondary highlight</label>
+      </div>
+      <div class="row"><label for="rough">Roughness</label><input id="rough" type="range" min="0.15" max="0.7" step="0.01" value="0.32"><output id="roughV"></output></div>
+      <div class="row" id="rowShift"><label for="shift">Cuticle tilt</label><input id="shift" type="range" min="0" max="0.12" step="0.002" value="0.04"><output id="shiftV"></output></div>
+      <div class="row" id="rowScatter"><label for="scatter">Multi-scatter</label><input id="scatter" type="range" min="0" max="1.5" step="0.01" value="0.5"><output id="scatterV"></output></div>
+    </section>
+
+    <section>
+      <h2>2. Color</h2>
+      <div class="row"><label for="color">Hair color</label><select id="color"><option value="0">Black</option><option value="1" selected>Brown</option><option value="2">Blond</option><option value="3">Red</option><option value="4">Gray</option></select></div>
+      <div class="row"><label for="vari">Strand variation</label><input id="vari" type="range" min="0" max="1" step="0.01" value="0.6"><output id="variV"></output></div>
+    </section>
+
+    <section>
+      <h2>3. Self-shadowing</h2>
+      <select id="shMode" aria-label="Hair shadow mode">
+        <option value="0">None</option>
+        <option value="1">Hard shadow map (lit or not)</option>
+        <option value="2" selected>Deep shadow approximation (by depth inside the hair)</option>
+      </select>
+      <div class="row"><label for="dens">Density</label><input id="dens" type="range" min="0.5" max="14" step="0.1" value="5"><output id="densV"></output></div>
+    </section>
+
+    <section>
+      <h2>4. Strands</h2>
+      <div class="row"><label for="count">Strands</label><input id="count" type="range" min="1000" max="24000" step="500" value="10000"><output id="countV"></output></div>
+      <div class="row"><label for="length">Length</label><input id="length" type="range" min="0.4" max="3" step="0.05" value="2.2"><output id="lengthV"></output></div>
+      <div class="row"><label for="width">Width</label><input id="width" type="range" min="0.002" max="0.04" step="0.001" value="0.012"><output id="widthV"></output></div>
+      <div class="row"><label for="clump">Clumping</label><input id="clump" type="range" min="0" max="1" step="0.01" value="0.6"><output id="clumpV"></output></div>
+      <div class="row"><label for="curl">Curl</label><input id="curl" type="range" min="0" max="2" step="0.01" value="0.35"><output id="curlV"></output></div>
+      <div class="row"><label for="frizz">Frizz</label><input id="frizz" type="range" min="0" max="2" step="0.01" value="0.5"><output id="frizzV"></output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="fade" checked> Thin-strand fade (alpha to coverage)</label>
+        <label><input type="checkbox" id="stripOn" checked> Show lobe thumbnails</label>
+      </div>
+      <div class="btns"><button class="p" type="button" id="reseed">New random style</button></div>
+    </section>
+
+    <section>
+      <h2>Lighting and camera</h2>
+      <div class="row"><label for="az">Key azimuth</label><input id="az" type="range" min="-180" max="180" step="1" value="35"><output id="azV"></output></div>
+      <div class="row"><label for="el">Key elevation</label><input id="el" type="range" min="-10" max="85" step="1" value="42"><output id="elV"></output></div>
+      <div class="btns">
+        <button class="p" type="button" id="reset">Reset camera</button>
+        <button class="p" type="button" id="hiShot">Highlight close-up</button>
+        <button class="p" type="button" id="backShot">Back-lit shot</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <select id="view" aria-label="Main view">
+        <option value="0">Final</option>
+        <option value="1">Tangents (strand direction)</option>
+        <option value="2">Strands (random color each)</option>
+        <option value="3">Shadow / transmittance</option>
+        <option value="4">R only (or the model's specular)</option>
+        <option value="5">TT only</option>
+        <option value="6">TRT only</option>
+        <option value="7">Diffuse / multiple scattering + ambient</option>
+      </select>
+    </section>
+
+    <section>
+      <h2>Measured</h2>
+      <dl class="kv">
+        <dt>Strands × segments</dt><dd id="sStr">–</dd>
+        <dt>Triangles</dt><dd id="sTri">–</dd>
+        <dt>Anti-aliasing samples</dt><dd id="sAA">–</dd>
+        <dt>GPU, shadow pass</dt><dd id="gS">–</dd>
+        <dt>GPU, main view + thumbnails</dt><dd id="gM">–</dd>
+      </dl>
+      <p class="kcap">The image is static, so the lab only re-renders when you change something.</p>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Step through the three shading models. Surface shading gives a round blob. Kajiya–Kay turns it into a band across the strands. Marschner splits the band into a white one and a colored one.</li>
+        <li>Press <b>Highlight close-up</b> and drag <b>Cuticle tilt</b>: the white (R) and colored (TRT) highlights slide apart along the strands. At 0 they sit on top of each other.</li>
+        <li>Press <b>Back-lit shot</b> and toggle <b>TT</b>: the bright rim around the silhouette is light passing through the fibers. Try it with blond, then black.</li>
+        <li>Set shadows to <b>None</b>: the hair goes flat and glows from inside. <b>Hard</b> is noisy. The deep approximation gives depth.</li>
+        <li>Pick <b>Blond</b> and drag <b>Multi-scatter</b> to 0: light hair turns dark and dull, because most of its brightness is light bouncing between strands.</li>
+        <li>Zoom far out and toggle <b>Thin-strand fade</b>: without it, strands stay one pixel wide and the hair looks like wire.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let dirty = true, regen = true;
+
+// ---------- UI ----------
+const EXPLAIN = [
+  "Pretend the hair is one solid shell and light it with a surface normal, like any other mesh. The highlight is a round blob and the whole thing reads as a plastic helmet. A fiber is a thin cylinder: it has no single normal, only a direction.",
+  "Shade with the strand's tangent T instead of a normal. A cylinder reflects light into a cone around its axis, so the highlight becomes a band running across the strands. Diffuse = sin(T, L), specular peaks where the view direction lies on the reflection cone. Cheap and still used, but it has one white highlight, no color in the highlight and no back-lighting.",
+  "Follows three light paths through a fiber. R reflects off the outer cuticle: white, shifted toward the root because the cuticle scales are tilted. TT passes straight through: strong when the light is behind the hair. TRT reflects once inside: tinted by the pigment and shifted toward the tip. This lab uses Karis's real-time fit (Unreal, 2016), plus his fake multiple-scattering term for light bouncing between strands."
+];
+const COLORS = [[0.012, 0.008, 0.006], [0.065, 0.028, 0.013], [0.55, 0.36, 0.16], [0.42, 0.09, 0.03], [0.5, 0.5, 0.5]];
+const state = { model: 2, lobeR: true, lobeTT: true, lobeTRT: true, rough: 0.32, shift: 0.04, scatter: 0.5, color: 1, vari: 0.6, shMode: 2, dens: 5, count: 10000, length: 2.2, width: 0.012, clump: 0.6, curl: 0.35, frizz: 0.5, fade: true, az: 35, el: 42, view: 0, strip: true, seed: 1 };
+const GEO = new Set(["count", "length", "clump", "curl", "frizz"]);
+const fmt = { rough: v => v.toFixed(2), shift: v => (v * 180 / Math.PI).toFixed(1) + "°", scatter: v => v.toFixed(2), vari: v => v.toFixed(2), dens: v => v.toFixed(1), count: v => (v / 1000).toFixed(1) + " k", length: v => (v * 10).toFixed(0) + " cm", width: v => (v * 100).toFixed(1) + " mm", clump: v => v.toFixed(2), curl: v => v.toFixed(2), frizz: v => v.toFixed(2), az: v => v + "°", el: v => v + "°" };
+for (const k in fmt) { const el = $(k), out = $(k + "V"); const upd = () => { state[k] = +el.value; out.textContent = fmt[k](state[k]); dirty = true; if (GEO.has(k)) regen = true; }; el.addEventListener("input", upd); upd(); }
+for (const k of ["lobeR", "lobeTT", "lobeTRT", "fade"]) $(k).addEventListener("change", e => { state[k] = e.target.checked; dirty = true; });
+for (const k of ["model", "color", "shMode"]) $(k).addEventListener("change", e => { state[k] = +e.target.value; dirty = true; syncHud(); });
+$("reseed").addEventListener("click", () => { state.seed++; regen = true; dirty = true; });
+function syncHud() {
+  $("explain").textContent = EXPLAIN[state.model];
+  $("hudTech").innerHTML = `<b>${["Surface shading", "Kajiya–Kay", "Marschner"][state.model]}</b> · ${["no shadows", "hard shadows", "deep shadows"][state.shMode]}`;
+  const m = state.model === 2; $("lobes").classList.toggle("dim", !m); $("rowShift").classList.toggle("dim", !m); $("rowScatter").classList.toggle("dim", !m);
+}
+function apply(obj) { for (const k in obj) { const el = $(k); if (!el) continue; if (el.type === "checkbox") el.checked = obj[k]; else el.value = obj[k]; el.dispatchEvent(new Event(el.type === "range" ? "input" : "change")); } }
+const STAGES = [[1, "1 Tangents"], [2, "2 Strands"], [3, "3 Shadow"], [4, "4 R"], [5, "5 TT"], [6, "6 TRT"], [7, "7 Scatter"], [0, "8 Final"]];
+const stripEl = $("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+function setView(v) { state.view = v; $("view").value = String(v); thumbs.forEach(t => t.el.classList.toggle("on", t.v === v)); dirty = true; }
+$("view").addEventListener("change", e => setView(+e.target.value));
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; rectsDirty = true; dirty = true; });
+
+// ---------- math ----------
+const hyp = a => Math.hypot(a[0], a[1], a[2]);
+const nrm = a => { const l = hyp(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const M = {
+  mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; },
+  persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; },
+  ortho(l, r, b, t, n, f) { const o = new Float32Array(16); o[0] = 2 / (r - l); o[5] = 2 / (t - b); o[10] = -2 / (f - n); o[12] = -(r + l) / (r - l); o[13] = -(t + b) / (t - b); o[14] = -(f + n) / (f - n); o[15] = 1; return o; },
+  lookAt(e, c, u) { const z = nrm([e[0] - c[0], e[1] - c[1], e[2] - c[2]]), x = nrm(cross(u, z)), y = cross(z, x); return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1]); }
+};
+function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+
+// ---------- the bust: ellipsoids, used for drawing and for hair collision ----------
+const HR = [0.9, 1.08, 1.0];
+const SKIN = [0.50, 0.33, 0.26];
+const PARTS = [
+  { c: [0, 0, 0], r: HR, col: SKIN, hit: true },
+  { c: [0, -1.3, -0.1], r: [0.45, 0.8, 0.45], col: SKIN, hit: true },
+  { c: [0, -2.4, -0.05], r: [1.9, 0.7, 0.85], col: [0.16, 0.17, 0.2], hit: true },
+  { c: [0, -0.15, 0.98], r: [0.1, 0.16, 0.14], col: SKIN },
+  { c: [0.32, 0.12, 0.86], r: [0.11, 0.07, 0.06], col: [0.03, 0.025, 0.02] },
+  { c: [-0.32, 0.12, 0.86], r: [0.11, 0.07, 0.06], col: [0.03, 0.025, 0.02] }
+];
+function collide(p, margin) {
+  for (const e of PARTS) {
+    if (!e.hit) continue;
+    const q = [(p[0] - e.c[0]) / (e.r[0] + margin), (p[1] - e.c[1]) / (e.r[1] + margin), (p[2] - e.c[2]) / (e.r[2] + margin)], l = hyp(q);
+    if (l < 1 && l > 1e-6) { p[0] = e.c[0] + q[0] / l * (e.r[0] + margin); p[1] = e.c[1] + q[1] / l * (e.r[1] + margin); p[2] = e.c[2] + q[2] / l * (e.r[2] + margin); }
+  }
+}
+
+// ---------- strand generation: guide strands first, then many strands around each guide ----------
+const SEG = 14;
+function generate() {
+  const R = rng(state.seed * 7919 + 13), rs = () => R() * 2 - 1, N = state.count, P = SEG + 1;
+  const K = Math.max(30, Math.round(N / 30)), rho = Math.sqrt(6 / K) * 1.15;
+  const guides = [];
+  for (let k = 0; k < K; k++) {
+    let d;
+    for (;;) { d = nrm([rs(), rs(), rs()]); if (d[1] > (d[2] > 0 ? -0.3 + 1.1 * d[2] : -0.3 + 0.25 * d[2])) break; }
+    let p = [d[0] * HR[0], d[1] * HR[1], d[2] * HR[2]];
+    const n = nrm([d[0] / HR[0], d[1] / HR[1], d[2] / HR[2]]), sx = d[0] >= 0 ? 1 : -1;
+    const comb = nrm([sx * 0.8, -0.15, d[2] > 0.2 ? -0.55 : -0.25]);
+    let dir = nrm([n[0] * 0.55 + comb[0] * 0.75, n[1] * 0.55 + comb[1] * 0.75, n[2] * 0.55 + comb[2] * 0.75]);
+    const seg = state.length * (0.85 + 0.15 * R()) / SEG, pts = [p.slice()];
+    for (let i = 1; i <= SEG; i++) {
+      dir = nrm([dir[0] + rs() * 0.06, dir[1] - 0.34 + rs() * 0.03, dir[2] + rs() * 0.06]);
+      const q = [p[0] + dir[0] * seg, p[1] + dir[1] * seg, p[2] + dir[2] * seg]; collide(q, 0.04);
+      const dd = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], l = hyp(dd); if (l > 1e-5) dir = [dd[0] / l, dd[1] / l, dd[2] / l];
+      p = q; pts.push(p.slice());
+    }
+    const E1 = [], E2 = []; let e1 = nrm(cross(nrm([pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]]), [0.31, 0.9, 0.2]));
+    for (let i = 0; i <= SEG; i++) {
+      const a = pts[Math.max(i - 1, 0)], b = pts[Math.min(i + 1, SEG)], gd = nrm([b[0] - a[0], b[1] - a[1], b[2] - a[2]]), k1 = dot(e1, gd);
+      e1 = nrm([e1[0] - gd[0] * k1, e1[1] - gd[1] * k1, e1[2] - gd[2] * k1]); E1.push(e1); E2.push(cross(gd, e1));
+    }
+    guides.push({ pts, E1, E2, phase: R() * 6.283 });
+  }
+  const verts = new Float32Array(N * P * 2 * 9), idx = new Uint32Array(N * SEG * 6), sp = new Float32Array(P * 3);
+  let vo = 0, io = 0;
+  for (let s = 0; s < N; s++) {
+    const g = guides[Math.floor(R() * K)], ang = R() * 6.283, rad = Math.sqrt(R()) * rho, a = Math.cos(ang) * rad, b = Math.sin(ang) * rad;
+    const lenF = 0.72 + 0.28 * R(), rnd = R(), ph = g.phase + rs() * 0.5, margin = 0.02 + 0.07 * R(), fz = [0, 0, 0];
+    for (let i = 0; i <= SEG; i++) {
+      const t = i / SEG, u = t * lenF * SEG, i0 = Math.min(Math.floor(u), SEG - 1), fr = u - i0, A = g.pts[i0], B = g.pts[i0 + 1], e1 = g.E1[i0], e2 = g.E2[i0];
+      const spread = 1 - state.clump * 0.9 * Math.pow(t, 0.6), cr = state.curl * 0.11 * Math.sqrt(t), th = ph + t * lenF * state.length * 5.5;
+      const oa = a * spread + cr * Math.cos(th), ob = b * spread + cr * Math.sin(th);
+      fz[0] += rs() * state.frizz * 0.022; fz[1] += rs() * state.frizz * 0.022; fz[2] += rs() * state.frizz * 0.022;
+      const pt = [A[0] + (B[0] - A[0]) * fr + e1[0] * oa + e2[0] * ob + fz[0] * t, A[1] + (B[1] - A[1]) * fr + e1[1] * oa + e2[1] * ob + fz[1] * t, A[2] + (B[2] - A[2]) * fr + e1[2] * oa + e2[2] * ob + fz[2] * t];
+      collide(pt, margin); sp[i * 3] = pt[0]; sp[i * 3 + 1] = pt[1]; sp[i * 3 + 2] = pt[2];
+    }
+    const base = vo / 9;
+    for (let i = 0; i <= SEG; i++) {
+      const i0 = Math.max(i - 1, 0) * 3, i1 = Math.min(i + 1, SEG) * 3, T = nrm([sp[i1] - sp[i0], sp[i1 + 1] - sp[i0 + 1], sp[i1 + 2] - sp[i0 + 2]]);
+      for (const side of [-1, 1]) { verts[vo++] = sp[i * 3]; verts[vo++] = sp[i * 3 + 1]; verts[vo++] = sp[i * 3 + 2]; verts[vo++] = T[0]; verts[vo++] = T[1]; verts[vo++] = T[2]; verts[vo++] = i / SEG; verts[vo++] = side; verts[vo++] = rnd; }
+      if (i < SEG) { const v = base + i * 2; idx[io++] = v; idx[io++] = v + 1; idx[io++] = v + 2; idx[io++] = v + 1; idx[io++] = v + 3; idx[io++] = v + 2; }
+    }
+  }
+  return { verts, idx };
+}
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: true, alpha: false, depth: true });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+const timerExt = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+const EMPTY_FS = `#version 300 es
+precision mediump float; out vec4 o; void main(){ o = vec4(1.0); }`;
+const TONE = `
+vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 tone(vec3 c){ return pow(aces(c * 0.9), vec3(1.0 / 2.2)); }`;
+
+// Each strand is a ribbon: two vertices per point, pushed apart sideways so the ribbon always faces the viewer.
+const HAIR_VS = `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aTan; layout(location=2) in vec3 aPar;
+uniform mat4 uVP, uLightVP; uniform vec3 uEye, uViewDir; uniform float uWidth, uPx; uniform int uOrtho;
+out vec3 vT; out vec3 vW; out vec3 vPar; out vec3 vLs; out float vCov;
+void main(){
+  vec3 toCam = uOrtho == 1 ? -uViewDir : normalize(uEye - aPos);
+  vec3 c = cross(aTan, toCam); float cl = length(c);
+  vec3 side = cl > 1e-4 ? c / cl : vec3(1.0, 0.0, 0.0);
+  float w = uWidth * mix(1.0, 0.3, smoothstep(0.55, 1.0, aPar.x));
+  float px = uOrtho == 1 ? uPx : uPx * length(uEye - aPos);
+  float wf = max(w, px); vCov = w / wf;
+  vec3 p = aPos + side * aPar.y * 0.5 * wf;
+  vT = aTan; vW = p; vPar = aPar;
+  vLs = (uLightVP * vec4(p, 1.0)).xyz * 0.5 + 0.5;
+  gl_Position = uVP * vec4(p, 1.0);
+}`;
+const hairProg = program(HAIR_VS, `#version 300 es
+precision highp float;
+in vec3 vT; in vec3 vW; in vec3 vPar; in vec3 vLs; in float vCov;
+uniform vec3 uEye, uKey, uBase;
+uniform sampler2D uSh;
+uniform float uRange, uDens, uRough, uShift, uScatter, uVar;
+uniform int uModel, uShMode, uMode, uR, uTT, uTRT, uFade;
+out vec4 o;
+${TONE}
+float hairG(float B, float th){ return exp(-0.5 * th * th / (B * B)) / (2.5066 * B); }
+float hairF(float c){ float f = 1.0 - c, f2 = f * f; return 0.0465 + 0.9535 * f2 * f2 * f; }
+float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+// how much key light reaches this point: fade by how deep it sits inside the hair, measured in the shadow map
+float lightReach(){
+  if (uShMode == 0) return 1.0;
+  if (uShMode == 1) return vLs.z - 0.004 > texture(uSh, vLs.xy).r ? 0.0 : 1.0;
+  float s = 0.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    float d = max(vLs.z - texture(uSh, vLs.xy + vec2(x, y) * 1.5 / 2048.0).r, 0.0) * uRange;
+    s += exp(-d * uDens);
+  }
+  return s / 9.0;
+}
+void main(){
+  vec3 T = normalize(vT), V = normalize(uEye - vW), L = uKey;
+  float t = vPar.x, rnd = vPar.z;
+  vec3 base = max(uBase * (1.0 + (rnd - 0.5) * 0.9 * uVar), vec3(0.003));
+  float sh = lightReach();
+  vec3 lightC = vec3(1.0, 0.96, 0.90) * 8.0;
+  float sTL = clamp(dot(T, L), -1.0, 1.0), sTV = clamp(dot(T, V), -1.0, 1.0);
+  vec3 fakeN = normalize(V - T * sTV + 1e-4);
+  vec3 lr = vec3(0.0), ltt = vec3(0.0), ltrt = vec3(0.0), ld = vec3(0.0);
+  if (uModel == 0) {
+    vec3 N = normalize(vec3(vW.x, max(vW.y, 0.0), vW.z));
+    float ndl = max(dot(N, L), 0.0);
+    ld = base * ndl * 0.32;
+    lr = vec3(0.07) * pow(max(dot(N, normalize(L + V)), 0.0), 2.0 / (uRough * uRough * uRough * uRough) - 2.0) * step(0.0, ndl);
+    fakeN = N;
+  } else if (uModel == 1) {
+    float sinTL = sqrt(1.0 - sTL * sTL), sinTV = sqrt(1.0 - sTV * sTV);
+    ld = base * sinTL * 0.30;
+    lr = vec3(0.10) * pow(max(sinTL * sinTV - sTL * sTV, 0.0), clamp(2.0 / (uRough * uRough * uRough * uRough) - 2.0, 6.0, 400.0));
+  } else {
+    float shift = uShift + (rnd - 0.5) * 0.07 * uVar;
+    float VoL = dot(V, L);
+    float cosThD = cos(0.5 * abs(asin(sTV) - asin(sTL)));
+    vec3 Lp = L - sTL * T, Vp = V - sTV * T;
+    float cosPhi = dot(Lp, Vp) * inversesqrt(dot(Lp, Lp) * dot(Vp, Vp) + 1e-4);
+    float cosHalfPhi = sqrt(clamp(0.5 + 0.5 * cosPhi, 0.0, 1.0));
+    float nP = 1.19 / cosThD + 0.36 * cosThD;
+    float a0 = -shift * 2.0, a1 = shift, a2 = shift * 4.0, r2 = uRough * uRough;
+    float sa = sin(a0), ca = cos(a0);
+    float sR = 2.0 * sa * (ca * cosHalfPhi * sqrt(max(0.5 - 0.5 * VoL, 0.0)) + sa * sqrt(max(0.5 + 0.5 * VoL, 0.0)));
+    lr = vec3(hairG(max(r2 * 1.41421 * cosHalfPhi, 0.02), sTL + sTV - sR) * 0.25 * cosHalfPhi * hairF(sqrt(clamp(0.5 + 0.5 * VoL, 0.0, 1.0))));
+    float a = 1.0 / nP, h = cosHalfPhi * (1.0 + a * (0.6 - 0.8 * cosPhi));
+    float f = hairF(cosThD * sqrt(clamp(1.0 - h * h, 0.0, 1.0)));
+    ltt = hairG(r2 * 0.5, sTL + sTV - a1) * exp(-3.65 * cosPhi - 3.98) * (1.0 - f) * (1.0 - f) * pow(base, vec3(0.5 * sqrt(max(1.0 - h * h * a * a, 0.0)) / cosThD));
+    f = hairF(cosThD * 0.5);
+    ltrt = hairG(r2 * 2.0, sTL + sTV - a2) * exp(17.0 * cosPhi - 16.78) * (1.0 - f) * (1.0 - f) * f * pow(base, vec3(0.8 / cosThD));
+    float wrapL = clamp((dot(fakeN, L) + 1.0) / 4.0, 0.0, 1.0);
+    float luma = max(dot(base, vec3(0.3, 0.59, 0.11)), 1e-3);
+    ld = sqrt(base) * (0.3183 * mix(wrapL, 1.0 - abs(sTL), 0.33) * uScatter) * pow(base / luma, vec3(1.0 - sh));
+    if (uR == 0) lr = vec3(0.0); if (uTT == 0) ltt = vec3(0.0); if (uTRT == 0) ltrt = vec3(0.0);
+  }
+  vec3 amb = base * mix(vec3(0.10, 0.08, 0.07), vec3(0.26, 0.31, 0.42), fakeN.y * 0.5 + 0.5) * mix(0.35, 1.0, t) * 1.1;
+  vec3 k = lightC * sh, col;
+  if (uMode == 0) col = tone((lr + ltt + ltrt + ld) * k + amb);
+  else if (uMode == 1) col = T * 0.5 + 0.5;
+  else if (uMode == 2) col = (0.25 + 0.75 * fract(rnd * vec3(7.13, 13.71, 29.33))) * mix(0.45, 1.0, t);
+  else if (uMode == 3) col = vec3(sh);
+  else if (uMode == 4) col = tone(lr * k * 1.5);
+  else if (uMode == 5) col = tone(ltt * k * 1.5);
+  else if (uMode == 6) col = tone(ltrt * k * 1.5);
+  else col = tone(ld * k + amb);
+  float alpha = uFade == 1 ? clamp(vCov + (hash(gl_FragCoord.xy) - 0.5) * 0.2, 0.0, 1.0) : 1.0;
+  o = vec4(col, alpha);
+}`);
+const hairDepthProg = program(HAIR_VS, EMPTY_FS);
+
+const HEAD_VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uVP, uLightVP; uniform vec3 uC, uS;
+out vec3 vN; out vec3 vLs;
+void main(){ vec3 p = uC + aPos * uS; vN = normalize(aPos / uS); vLs = (uLightVP * vec4(p, 1.0)).xyz * 0.5 + 0.5; gl_Position = uVP * vec4(p, 1.0); }`;
+const headProg = program(HEAD_VS, `#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vLs;
+uniform vec3 uKey, uColor; uniform sampler2D uSh; uniform float uRange; uniform int uMode, uShMode;
+out vec4 o;
+${TONE}
+void main(){
+  vec3 N = normalize(vN); float sh = 1.0;
+  if (uShMode > 0) { sh = 0.0; for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) sh += vLs.z - 0.03 / uRange > texture(uSh, vLs.xy + vec2(x, y) * 1.5 / 2048.0).r ? 0.0 : 1.0; sh /= 9.0; }
+  vec3 amb = mix(vec3(0.10, 0.08, 0.07), vec3(0.26, 0.31, 0.42), N.y * 0.5 + 0.5);
+  vec3 col = uColor * (vec3(1.0, 0.96, 0.90) * 2.6 * max(dot(N, uKey), 0.0) * sh + amb);
+  o = vec4(uMode == 0 ? tone(col) : (uMode == 3 ? vec3(sh * step(0.0, dot(N, uKey))) : vec3(0.05, 0.055, 0.065)), 1.0);
+}`);
+const headDepthProg = program(HEAD_VS, EMPTY_FS);
+
+// ---------- buffers ----------
+const sphere = (() => {
+  const seg = 48, rings = 32, P = [], I = [];
+  for (let r = 0; r <= rings; r++) { const th = Math.PI * r / rings; for (let s = 0; s <= seg; s++) { const ph = 2 * Math.PI * s / seg; P.push(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)); } }
+  const W = seg + 1;
+  for (let r = 0; r < rings; r++) for (let s = 0; s < seg; s++) { const a = r * W + s, b = a + W; I.push(a, a + 1, b, a + 1, b + 1, b); }
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(P), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(I), gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return { vao, count: I.length };
+})();
+const hairVao = gl.createVertexArray(), hairVb = gl.createBuffer(), hairIb = gl.createBuffer();
+gl.bindVertexArray(hairVao); gl.bindBuffer(gl.ARRAY_BUFFER, hairVb);
+for (let i = 0; i < 3; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, 3, gl.FLOAT, false, 36, i * 12); }
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hairIb); gl.bindVertexArray(null);
+let hairCount = 0;
+function rebuildHair() {
+  const g = generate();
+  gl.bindVertexArray(hairVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, hairVb); gl.bufferData(gl.ARRAY_BUFFER, g.verts, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hairIb); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.idx, gl.STATIC_DRAW);
+  gl.bindVertexArray(null); hairCount = g.idx.length;
+  $("sStr").textContent = `${state.count.toLocaleString("en-US")} × ${SEG}`; $("sTri").textContent = (hairCount / 3).toLocaleString("en-US");
+  $("hudGeo").innerHTML = `<b>${(state.count / 1000).toFixed(1)} k</b> strands · ${(hairCount / 3000).toFixed(0)} k triangles`;
+}
+const SHN = 2048, shTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, shTex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, SHN, SHN);
+for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+const shFbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, shFbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shTex, 0); gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+$("sAA").textContent = gl.getParameter(gl.SAMPLES) + "×";
+
+// ---------- layout + camera ----------
+let W = 0, H = 0, rectsDirty = true;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (w !== W || h !== H) { W = w; H = h; canvas.width = w; canvas.height = h; stripEl.style.setProperty("--ar", (w / h).toFixed(3)); rectsDirty = true; dirty = true; }
+  if (rectsDirty) {
+    rectsDirty = false;
+    const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+    for (const t of thumbs) { const r = t.el.getBoundingClientRect(); t.rect = [Math.round((r.left - cr.left + 1) * sx), Math.round((cr.bottom - r.bottom + 1) * sy), Math.round((r.width - 2) * sx), Math.round((r.height - 2) * sy)]; }
+  }
+}
+window.addEventListener("resize", () => { rectsDirty = true; dirty = true; });
+const cam = { yaw: 0.95, pitch: 0.1, dist: 8.2, tgt: [0, -0.9, 0] };
+const camDefault = JSON.stringify(cam);
+function setCam(c) { Object.assign(cam, JSON.parse(JSON.stringify(c))); dirty = true; }
+let drag = null; const pointers = new Map();
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); if (!pointers.size) drag = null; });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return; dirty = true;
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [c, d] = [...pointers.values()]; const d1 = Math.hypot(c[0] - d[0], c[1] - d[1]);
+    if (d0 > 0 && d1 > 0) cam.dist = Math.min(40, Math.max(1.5, cam.dist * d0 / d1));
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) { const s = cam.dist * 0.0012, cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw); cam.tgt[0] += sy * dx * s; cam.tgt[2] -= cy * dx * s; cam.tgt[1] += dy * s; }
+  else { cam.yaw += dx * 0.006; cam.pitch = Math.max(-1.2, Math.min(1.4, cam.pitch + dy * 0.006)); }
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(40, Math.max(1.5, cam.dist * Math.exp(e.deltaY * 0.001))); dirty = true; }, { passive: false });
+$("reset").addEventListener("click", () => setCam(JSON.parse(camDefault)));
+$("hiShot").addEventListener("click", () => { setCam({ yaw: 0.45, pitch: 0.22, dist: 4.2, tgt: [0.55, -0.25, 0.1] }); apply({ az: 25, el: 55 }); });
+$("backShot").addEventListener("click", () => { setCam({ yaw: 1.45, pitch: 0.04, dist: 8.2, tgt: [0, -0.9, 0] }); apply({ az: 168, el: 14 }); });
+
+// ---------- timers ----------
+const timers = {};
+function tBegin(name) { if (!timerExt) return false; const t = timers[name] || (timers[name] = { q: null, ms: null }); if (t.q) return false; t.q = gl.createQuery(); gl.beginQuery(timerExt.TIME_ELAPSED_EXT, t.q); return true; }
+function tEnd(s) { if (s) gl.endQuery(timerExt.TIME_ELAPSED_EXT); }
+function tPoll() {
+  if (!timerExt) return; const dj = gl.getParameter(timerExt.GPU_DISJOINT_EXT);
+  for (const k in timers) { const t = timers[k]; if (t.q && gl.getQueryParameter(t.q, gl.QUERY_RESULT_AVAILABLE)) { if (!dj) t.ms = gl.getQueryParameter(t.q, gl.QUERY_RESULT) / 1e6; gl.deleteQuery(t.q); t.q = null; } }
+}
+const msTxt = k => !timerExt ? "n/a in this browser" : (timers[k] && timers[k].ms != null) ? timers[k].ms.toFixed(2) + " ms" : "measuring…";
+
+// ---------- frame ----------
+const FOV = 0.6, LR = 3.4, LC = [0, -0.9, 0], RANGE = 2 * LR + 1.9;
+function drawParts(prog, vp, lvp) {
+  gl.useProgram(prog.p); gl.uniformMatrix4fv(prog.u.uVP, false, vp); gl.uniformMatrix4fv(prog.u.uLightVP, false, lvp);
+  gl.bindVertexArray(sphere.vao);
+  for (const e of PARTS) { gl.uniform3fv(prog.u.uC, e.c); gl.uniform3fv(prog.u.uS, e.r); gl.uniform3fv(prog.u.uColor, e.col); gl.drawElements(gl.TRIANGLES, sphere.count, gl.UNSIGNED_SHORT, 0); }
+}
+function drawView(mode, x, y, w, h, c, small) {
+  const fade = state.fade && !small;
+  gl.viewport(x, y, w, h); gl.scissor(x, y, w, h);
+  gl.clearColor(0.045, 0.05, 0.065, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const vp = M.mul(M.persp(FOV, w / h, 0.1, 80), c.view);
+  gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE); gl.enable(gl.CULL_FACE);
+  gl.useProgram(headProg.p);
+  gl.uniform3fv(headProg.u.uKey, c.L); gl.uniform1i(headProg.u.uSh, 0); gl.uniform1f(headProg.u.uRange, RANGE); gl.uniform1i(headProg.u.uMode, mode); gl.uniform1i(headProg.u.uShMode, state.shMode);
+  drawParts(headProg, vp, c.lvp);
+  gl.disable(gl.CULL_FACE);
+  if (fade) gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+  gl.useProgram(hairProg.p); const u = hairProg.u;
+  gl.uniformMatrix4fv(u.uVP, false, vp); gl.uniformMatrix4fv(u.uLightVP, false, c.lvp);
+  gl.uniform3fv(u.uEye, c.eye); gl.uniform3fv(u.uViewDir, c.fwd); gl.uniform1i(u.uOrtho, 0);
+  gl.uniform1f(u.uWidth, state.width); gl.uniform1f(u.uPx, 2 * Math.tan(FOV / 2) / h);
+  gl.uniform3fv(u.uKey, c.L); gl.uniform3fv(u.uBase, COLORS[state.color]); gl.uniform1i(u.uSh, 0);
+  gl.uniform1f(u.uRange, RANGE); gl.uniform1f(u.uDens, state.dens); gl.uniform1f(u.uRough, state.rough); gl.uniform1f(u.uShift, state.shift); gl.uniform1f(u.uScatter, state.scatter); gl.uniform1f(u.uVar, state.vari);
+  gl.uniform1i(u.uModel, state.model); gl.uniform1i(u.uShMode, state.shMode); gl.uniform1i(u.uMode, mode);
+  gl.uniform1i(u.uR, state.lobeR ? 1 : 0); gl.uniform1i(u.uTT, state.lobeTT ? 1 : 0); gl.uniform1i(u.uTRT, state.lobeTRT ? 1 : 0); gl.uniform1i(u.uFade, fade ? 1 : 0);
+  gl.bindVertexArray(hairVao); gl.drawElements(gl.TRIANGLES, hairCount, gl.UNSIGNED_INT, 0);
+  gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+}
+let frameN = 0;
+function frame() {
+  requestAnimationFrame(frame);
+  resize(); tPoll();
+  if (frameN++ % 20 === 0) { $("gS").textContent = msTxt("shadow"); $("gM").textContent = msTxt("main"); $("hudTime").innerHTML = timerExt ? `GPU <b>${msTxt("main")}</b>` : "renders on change"; }
+  if (!dirty) return; dirty = false;
+  if (regen) { regen = false; rebuildHair(); }
+  const eye = [cam.tgt[0] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), cam.tgt[1] + cam.dist * Math.sin(cam.pitch), cam.tgt[2] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw)];
+  const view = M.lookAt(eye, cam.tgt, [0, 1, 0]), fwd = nrm([cam.tgt[0] - eye[0], cam.tgt[1] - eye[1], cam.tgt[2] - eye[2]]);
+  const az = state.az * Math.PI / 180, el = state.el * Math.PI / 180, L = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];
+  const lvp = M.mul(M.ortho(-LR, LR, -LR, LR, 0.1, 2 * LR + 2), M.lookAt([LC[0] + L[0] * (LR + 1), LC[1] + L[1] * (LR + 1), LC[2] + L[2] * (LR + 1)], LC, [0, 1, 0]));
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true); gl.disable(gl.BLEND);
+
+  // 1) shadow map: depth of the bust and the hair as seen from the key light
+  const ts = tBegin("shadow");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shFbo); gl.viewport(0, 0, SHN, SHN); gl.disable(gl.SCISSOR_TEST); gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.enable(gl.CULL_FACE); drawParts(headDepthProg, lvp, lvp); gl.disable(gl.CULL_FACE);
+  gl.useProgram(hairDepthProg.p); const du = hairDepthProg.u;
+  gl.uniformMatrix4fv(du.uVP, false, lvp); gl.uniformMatrix4fv(du.uLightVP, false, lvp); gl.uniform3fv(du.uViewDir, [-L[0], -L[1], -L[2]]); gl.uniform3fv(du.uEye, eye);
+  gl.uniform1i(du.uOrtho, 1); gl.uniform1f(du.uWidth, state.width); gl.uniform1f(du.uPx, 2 * LR / SHN * 1.5);
+  gl.bindVertexArray(hairVao); gl.drawElements(gl.TRIANGLES, hairCount, gl.UNSIGNED_INT, 0);
+  tEnd(ts);
+
+  // 2) forward-render the bust and the hair, then the same scene once per thumbnail in a debug mode
+  const tm = tBegin("main");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.enable(gl.SCISSOR_TEST);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, shTex);
+  const c = { view, eye, fwd, L, lvp };
+  drawView(state.view, 0, 0, W, H, c);
+  if (state.strip) for (const t of thumbs) { const [x, y, w, h] = t.rect || [0, 0, 0, 0]; if (w > 4 && h > 4) drawView(t.v, x, y, w, h, c, true); }
+  gl.disable(gl.SCISSOR_TEST);
+  tEnd(tm);
+}
+syncHud(); setView(0);
+try { resize(); requestAnimationFrame(frame); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

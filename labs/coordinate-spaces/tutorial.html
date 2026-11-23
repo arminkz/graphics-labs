@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coordinate spaces: a walkthrough of the Coordinate Spaces Lab</title>
+<script>if (window.self !== window.top) document.documentElement.classList.add("in-panel");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tutorial.css">
+</head>
+<body>
+<nav class="page-nav"><a href="index.html#tutorial">Open the lab with this tutorial</a><a href="../../index.html#coordinate-spaces">All labs</a></nav>
+<main class="tutorial">
+<h1>Coordinate spaces: a walkthrough of the Coordinate Spaces Lab</h1>
+<p>Drag the <strong>Pipeline</strong> slider as you read.</p>
+<h2>The big picture</h2>
+<p>A vertex starts as numbers in a modeling tool and ends as a pixel. Between those two points it passes through six spaces, and each arrow is one simple operation:</p>
+<pre><code>object ──×M──▶ world ──×V──▶ view ──×P──▶ clip ──÷w──▶ NDC ──viewport──▶ screen
+</code></pre>
+<p>In a vertex shader, the first three arrows are the famous line:</p>
+<pre><code class="language-glsl">gl_Position = P * V * M * vec4(position, 1.0);   // this is clip space
+</code></pre>
+<p>The GPU does the last two arrows (the divide and the viewport transform) by itself after your vertex shader returns.</p>
+<p>In the lab, the <strong>amber frustum</strong> is the scene camera you're studying. The view you orbit with the mouse is a separate "lab" camera that lets you look at everything from outside. The <strong>yellow dot</strong> is the vertex you follow in the table.</p>
+<h2>1. Object space (local / model space)</h2>
+<p>Coordinates relative to the object's own origin, exactly as authored. The house was modeled around the center of its floor, so that point is <code>(0, 0, 0)</code> no matter where the house ends up in the world.</p>
+<p><em>In the lab:</em> at stage 1, the house sits at the origin with its own axes (bright red, green, blue). The world grid and the camera look shifted and tilted, because they're drawn relative to the house.</p>
+<h2>2. World space: <code>p_world = M · p_object</code></h2>
+<p>The <strong>model matrix</strong> <code>M = T · R · S</code> (translate · rotate · scale) places the object in one shared space with every other object, light and camera. Physics, gameplay and most lighting work here.</p>
+<p><em>In the lab:</em> move the <strong>Object</strong> sliders and watch the M matrix change. The translation sits in the last column, and rotation and scale fill the top-left 3×3 block.</p>
+<h2>3. View space (eye / camera space): <code>p_view = V · p_world</code></h2>
+<p>The <strong>view matrix</strong> is the <em>inverse</em> of the camera's own world transform. Instead of moving the camera, you move the whole world so the camera lands at the origin.</p>
+<p>OpenGL convention: the camera looks down <strong>−Z</strong>, with +X to the right and +Y up. Nothing is distorted yet, because this step is only a rotation plus a translation. A point's distance in front of the camera is simply <code>−z</code>.</p>
+<p><em>In the lab:</em> morph from World to View. The whole scene rotates and slides rigidly until the frustum's tip sits at the origin, pointing down −Z.</p>
+<h2>4. Clip space: <code>p_clip = P · p_view</code></h2>
+<p>The <strong>projection matrix</strong> produces 4D homogeneous coordinates <code>(x, y, z, w)</code>. For a perspective projection, its bottom row is <code>(0, 0, −1, 0)</code>, so:</p>
+<pre><code>w_clip = −z_view          (the distance in front of the camera)
+</code></pre>
+<p>That one line is where perspective comes from. A point is inside the view volume when:</p>
+<pre><code>−w ≤ x ≤ w,   −w ≤ y ≤ w,   −w ≤ z ≤ w
+</code></pre>
+<p>The GPU <strong>clips triangles here, before dividing</strong>. A point behind the camera has <code>w &lt; 0</code>, and dividing by a negative number would flip it to the other side of the screen. Clipping in this space avoids that.</p>
+<p><em>In the lab:</em> the table shows all four components. Move the house with <strong>Position X</strong> until the vertex's coordinates turn red: one of them has crossed ±w.</p>
+<h2>5. NDC (normalized device coordinates): <code>p_ndc = p_clip.xyz / p_clip.w</code></h2>
+<p>The <strong>perspective divide</strong> turns the frustum into the cube <code>[−1, 1]³</code>. Distant things had a larger <code>w</code>, so they shrink more, and lines that were parallel in the world now converge.</p>
+<p>Two things to notice:</p>
+<ul>
+<li><strong>Depth is not linear.</strong> The amber ticks are 1 m apart in view space, but in NDC they bunch up toward the far side. Most of the depth buffer's precision is spent close to the near plane. Lower <strong>Near plane</strong> to 0.1 and the bunching gets extreme. This is why a tiny near plane causes z-fighting far away.</li>
+<li><strong>Handedness flips.</strong> OpenGL's NDC is left-handed: +z points <em>into</em> the screen, while view space looked down −z. Direct3D, Vulkan and Metal use <code>z ∈ [0, 1]</code> instead of <code>[−1, 1]</code>.</li>
+</ul>
+<p>With an <strong>orthographic</strong> projection, <code>w</code> stays 1, so the divide changes nothing. Depth stays linear and parallel lines stay parallel.</p>
+<h2>6. Screen space (window / pixel space): the viewport transform</h2>
+<pre><code>x_px  = (x_ndc + 1) / 2 · width
+y_px  = (y_ndc + 1) / 2 · height
+depth = (z_ndc + 1) / 2          → written to the depth buffer
+</code></pre>
+<p>The rasterizer works here: it finds which pixels each triangle covers and interpolates attributes across them. In OpenGL and WebGL, <code>(0, 0)</code> is the <strong>bottom-left</strong> corner. Direct3D, Vulkan and Metal put it at the <strong>top-left</strong>, so y is flipped.</p>
+<p><em>In the lab:</em> the screen stage is NDC stretched to the viewport's aspect ratio and flattened into a thin depth slab. Compare it with the <strong>Camera's image</strong> in the top-right corner: same shape. Switch the viewport to <strong>360 × 640</strong> and notice that NDC doesn't change at all. Only this last step depends on the window size.</p>
+<h2>Worked example (default settings, vertex #9: roof ridge, right end)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Space</th>
+<th>Coordinates</th>
+<th>How you get there</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>(0.50, 1.15, 0.00, 1)</td>
+<td>as modeled</td>
+</tr>
+<tr>
+<td>World</td>
+<td>(0.54, 1.38, −0.25, 1)</td>
+<td>× M (scale 1.2, rotate 25°)</td>
+</tr>
+<tr>
+<td>View</td>
+<td>(0.59, 0.71, −4.66, 1)</td>
+<td>× V: the point is 4.66 units in front of the camera</td>
+</tr>
+<tr>
+<td>Clip</td>
+<td>(0.64, 1.36, 3.98, <strong>4.66</strong>)</td>
+<td>× P: w = −z_view = 4.66</td>
+</tr>
+<tr>
+<td>NDC</td>
+<td>(0.14, 0.29, 0.85)</td>
+<td>÷ 4.66</td>
+</tr>
+<tr>
+<td>Screen</td>
+<td>(363.8, 232.7) px, depth 0.927</td>
+<td>(0.14 + 1) / 2 × 640 = 363.8</td>
+</tr>
+</tbody>
+</table></div>
+<p>Notice that the vertex is at only about 50% of the camera's distance range, yet its depth value is already 0.927. That's the non-linear depth from step 5 in action.</p>
+<h2>Things to try</h2>
+<ol>
+<li>Drag the slider slowly from <strong>Object</strong> to <strong>Screen</strong> while watching the yellow vertex and its row in the table.</li>
+<li>At <strong>NDC</strong>, look at the depth ticks, then set <strong>Near plane</strong> to 0.1.</li>
+<li>Switch to <strong>Orthographic</strong>: w stays 1 and the divide does nothing.</li>
+<li>At <strong>Clip</strong>, move the house sideways until the vertex turns red. It has crossed ±w and would be clipped.</li>
+<li>Set the viewport to <strong>360 × 640</strong>: NDC stays the same cube, and only the screen step changes.</li>
+</ol>
+<h2>Cheat sheet</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>From → To</th>
+<th>Operation</th>
+<th>Who does it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object → World</td>
+<td><code>M · p</code></td>
+<td>you (vertex shader)</td>
+</tr>
+<tr>
+<td>World → View</td>
+<td><code>V · p</code>, with V = inverse(camera transform)</td>
+<td>you (vertex shader)</td>
+</tr>
+<tr>
+<td>View → Clip</td>
+<td><code>P · p</code></td>
+<td>you (vertex shader) → <code>gl_Position</code></td>
+</tr>
+<tr>
+<td>Clip → NDC</td>
+<td><code>xyz / w</code> (after clipping)</td>
+<td>GPU, fixed function</td>
+</tr>
+<tr>
+<td>NDC → Screen</td>
+<td>viewport transform + depth range</td>
+<td>GPU, set by <code>glViewport</code> / <code>glDepthRange</code></td>
+</tr>
+</tbody>
+</table></div>
+</main>
+</body>
+</html>

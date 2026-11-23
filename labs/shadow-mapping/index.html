@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow Mapping Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport with a pipeline strip, instrument panel on the right; stacks on narrow screens. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #6cb6ff;
+  --warm: #f2a93b;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 350px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.8); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: #c9d0db; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 150px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 10px; }
+.row { display: grid; grid-template-columns: 108px 1fr 58px; align-items: center; gap: 8px; margin: 6px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { text-align: left; color: var(--muted); font-weight: 500; padding: 3px 0; border-bottom: 1px solid var(--line); }
+td { font: 12px var(--font-mono); padding: 3px 0; font-variant-numeric: tabular-nums; }
+th:not(:first-child), td:not(:first-child) { text-align: right; }
+td .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; margin-top: 8px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.legend2 { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend2 span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; background: var(--c); }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL shadow mapping scene"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudFilter">filter</span>
+      <span class="chip" id="hudTexel">texel</span>
+      <span class="chip" id="hudTime">GPU</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll or pinch to zoom · right-drag to pan</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Shadow mapping lab</h1>
+      <p class="sub">A sun with cascaded shadow maps in WebGL 2. Pass 1 renders depth from the sun into a texture array; pass 2 renders the camera view and compares each pixel's depth against it.</p>
+    </div>
+
+    <section>
+      <h2>Filtering</h2>
+      <select id="filter" aria-label="Shadow filter">
+        <option value="0">1. Hard: one raw depth compare</option>
+        <option value="1">2. Hardware PCF: 2×2 bilinear compare</option>
+        <option value="2" selected>3. PCF 3×3 (9 hardware taps)</option>
+        <option value="3">4. PCF 5×5 (25 taps)</option>
+        <option value="4">5. PCF 7×7 (49 taps)</option>
+        <option value="5">6. Poisson disk, 16 rotated taps</option>
+        <option value="6">7. PCSS: contact-hardening soft shadows</option>
+      </select>
+      <div class="explain" id="explain"></div>
+      <div class="row"><label for="radius">Poisson radius</label><input id="radius" type="range" min="0.5" max="8" step="0.1" value="2.5"><output id="radiusV">2.5 tx</output></div>
+      <div class="row"><label for="sunsize">Sun size (PCSS)</label><input id="sunsize" type="range" min="0.2" max="6" step="0.1" value="1.5"><output id="sunsizeV">1.5°</output></div>
+    </section>
+
+    <section>
+      <h2>Bias: acne vs peter-panning</h2>
+      <div class="row"><label for="bias">Depth bias</label><input id="bias" type="range" min="0" max="0.5" step="0.005" value="0.02"><output id="biasV">2.0 cm</output></div>
+      <div class="row"><label for="slope">Slope-scale</label><input id="slope" type="range" min="0" max="6" step="0.1" value="1.5"><output id="slopeV">1.5</output></div>
+      <div class="row"><label for="normal">Normal offset</label><input id="normal" type="range" min="0" max="4" step="0.1" value="1"><output id="normalV">1.0 tx</output></div>
+      <div class="row"><label for="cull">Shadow pass</label>
+        <select id="cull"><option value="0">Draw front faces (cull back)</option><option value="1">Draw back faces (cull front)</option></select>
+      </div>
+      <div class="btns">
+        <button class="p" type="button" id="pAcne">Show acne</button>
+        <button class="p" type="button" id="pPan">Show peter-panning</button>
+        <button class="p" type="button" id="pGood">Balanced</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Shadow map</h2>
+      <div class="row"><label for="res">Resolution</label>
+        <select id="res"><option>256</option><option>512</option><option>1024</option><option selected>2048</option><option>4096</option></select>
+      </div>
+      <div class="row"><label for="casc">Cascades</label><input id="casc" type="range" min="1" max="4" step="1" value="3"><output id="cascV">3</output></div>
+      <div class="row"><label for="dist">Shadow distance</label><input id="dist" type="range" min="10" max="200" step="1" value="80"><output id="distV">80 m</output></div>
+      <div class="row"><label for="lambda">Split: uniform→log</label><input id="lambda" type="range" min="0" max="1" step="0.01" value="0.6"><output id="lambdaV">0.60</output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="stable" checked> Stabilize cascades (bounding sphere + texel snapping)</label>
+        <label><input type="checkbox" id="shadowsOn" checked> Shadows on</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Sun and motion</h2>
+      <div class="row"><label for="az">Sun azimuth</label><input id="az" type="range" min="0" max="360" step="1" value="35"><output id="azV">35°</output></div>
+      <div class="row"><label for="el">Sun elevation</label><input id="el" type="range" min="3" max="89" step="1" value="40"><output id="elV">40°</output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="animSun"> Animate sun</label>
+        <label><input type="checkbox" id="animObj" checked> Animate the spinning cube</label>
+        <label><input type="checkbox" id="orbit"> Slowly orbit the camera</label>
+        <label><input type="checkbox" id="stripOn" checked> Show pipeline stages under the scene</label>
+      </div>
+      <div class="btns"><button class="p" type="button" id="reset">Reset camera</button></div>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <select id="view" aria-label="Main view">
+        <option value="0">Final image</option>
+        <option value="1">Shadow mask</option>
+        <option value="2">Cascade splits</option>
+        <option value="3">Shadow-map texel grid</option>
+        <option value="9">Shadow map (depth from the sun)</option>
+        <option value="4">Sun's view (cascade 1)</option>
+      </select>
+      <div id="lgMask" class="legend2" style="display:none">
+        <span style="--c:#ffffff">lit: depth test passes</span>
+        <span style="--c:#000000;outline:1px solid #444">in shadow: something is closer to the sun</span>
+        <span style="--c:#24407a">faces away from the sun (N·L ≤ 0), no lookup needed</span>
+      </div>
+      <div id="lgCasc" class="legend2" style="display:none"></div>
+      <div id="lgGrid" class="legend2" style="display:none">
+        <span style="--c:#ffd24d">Each cell is one shadow-map texel projected onto the scene. Big or stretched cells mean blocky shadows.</span>
+      </div>
+      <div id="lgMap" class="legend2" style="display:none">
+        <span style="--c:#e8e8e8">brighter = closer to the sun. One tile per cascade, all the same resolution, covering larger and larger areas.</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Measured</h2>
+      <table>
+        <thead><tr><th>Cascade</th><th>Ends at</th><th>Covers</th><th>Texel</th></tr></thead>
+        <tbody id="cascTable"></tbody>
+      </table>
+      <dl class="kv">
+        <dt>Shadow map memory</dt><dd id="sMem">–</dd>
+        <dt>GPU, shadow pass</dt><dd id="sGpuS">–</dd>
+        <dt>GPU, main pass</dt><dd id="sGpuM">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Press <b>Show acne</b> and look at the ramp and the ground: stripes everywhere. Raise <b>Depth bias</b> or <b>Slope-scale</b> until they disappear.</li>
+        <li>Press <b>Show peter-panning</b>: the table and spheres float, because their shadows no longer touch them.</li>
+        <li>Set Resolution to <b>256</b> and Filter to <b>Hard</b>, then open the <b>Texel grid</b> stage to see why the edges get blocky.</li>
+        <li>Turn off <b>Stabilize cascades</b>, turn on <b>Slowly orbit the camera</b>, and watch shadow edges shimmer. Turn stabilization back on.</li>
+        <li>Pick <b>PCSS</b> and raise <b>Sun size</b>: the table legs' shadows stay sharp where they touch the ground and blur further away.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+// ---------- UI ----------
+const FILTERS = [
+  "One lookup with the raw depth: lit if my depth ≤ stored depth. Every shadow-map texel becomes a hard square on screen, so edges are blocky and crawl when things move.",
+  "The GPU does 4 depth compares on the nearest texels and blends the 0/1 results bilinearly, in one texture() call on a sampler2DShadow. Edges become a smooth 1-texel ramp for free.",
+  "Percentage-closer filtering: 9 hardware lookups on a 3×3 texel grid, averaged. Note the order: compare first, then average the results. Averaging the depths first would be wrong.",
+  "Same idea with a 5×5 grid. Softer, but 25 taps per pixel, and the softness is the same everywhere: it does not depend on how far the shadow is from its caster.",
+  "7×7 = 49 taps. Starts to look soft, at a real cost. This is why engines prefer smarter sample patterns.",
+  "16 taps in a Poisson-disk pattern, rotated randomly per pixel. Fewer samples than a big grid, and the banding turns into fine noise, which TAA would normally clean up.",
+  "Percentage-closer soft shadows. Step 1: search nearby texels for blockers and average their depth. Step 2: penumbra width = (receiver depth − blocker depth) × sun size. Step 3: Poisson PCF with that width. Shadows are sharp at contact and get softer with distance, like real sunlight."
+];
+const VIEW_NAMES = { 0: "Final", 1: "Shadow mask", 2: "Cascades", 3: "Texel grid", 4: "Sun's view", 9: "Shadow map" };
+const CASC_COL = ["#ff6b5b", "#5bd97a", "#5b9dff", "#ffd24d"];
+
+const state = {
+  filter: 2, radius: 2.5, sunsize: 1.5, bias: 0.02, slope: 1.5, normal: 1, cull: 0,
+  res: 2048, casc: 3, dist: 80, lambda: 0.6, stable: true, shadowsOn: true,
+  az: 35, el: 40, animSun: false, animObj: true, orbit: false, view: 0, strip: true
+};
+const fmtOut = {
+  radius: v => v.toFixed(1) + " tx", sunsize: v => v.toFixed(1) + "°", bias: v => (v * 100).toFixed(1) + " cm",
+  slope: v => v.toFixed(1), normal: v => v.toFixed(1) + " tx", casc: v => String(v), dist: v => v + " m",
+  lambda: v => v.toFixed(2), az: v => Math.round(v) + "°", el: v => Math.round(v) + "°"
+};
+function bindRange(k) {
+  const el = $(k), out = $(k + "V");
+  const upd = () => { state[k] = +el.value; out.textContent = fmtOut[k](state[k]); };
+  el.addEventListener("input", upd); upd();
+}
+["radius", "sunsize", "bias", "slope", "normal", "casc", "dist", "lambda", "az", "el"].forEach(bindRange);
+function setRange(k, v) { $(k).value = v; $(k).dispatchEvent(new Event("input")); }
+$("filter").addEventListener("change", e => { state.filter = +e.target.value; syncFilter(); });
+$("cull").addEventListener("change", e => state.cull = +e.target.value);
+$("res").addEventListener("change", e => { state.res = +e.target.value; });
+for (const k of ["stable", "shadowsOn", "animSun", "animObj", "orbit"]) $(k).addEventListener("change", e => state[k] = e.target.checked);
+$("pAcne").addEventListener("click", () => { setRange("bias", 0); setRange("slope", 0); setRange("normal", 0); $("cull").value = "0"; state.cull = 0; });
+$("pPan").addEventListener("click", () => { setRange("bias", 0.4); setRange("slope", 5); setRange("normal", 0); $("cull").value = "1"; state.cull = 1; });
+$("pGood").addEventListener("click", () => { setRange("bias", 0.02); setRange("slope", 1.5); setRange("normal", 1); $("cull").value = "0"; state.cull = 0; });
+function syncFilter() {
+  $("explain").textContent = FILTERS[state.filter];
+  $("hudFilter").innerHTML = `filter <b>${state.filter + 1}</b> · ${$("filter").options[state.filter].text.replace(/^\d+\.\s*/, "")}`;
+}
+syncFilter();
+
+const STAGES = [[4, "1 Sun's view"], [9, "2 Shadow map"], [2, "3 Cascades"], [3, "4 Texel grid"], [1, "5 Shadow mask"], [0, "6 Final"]];
+const stripEl = $("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+function setView(v) {
+  state.view = v; $("view").value = String(v);
+  thumbs.forEach(t => t.el.classList.toggle("on", t.v === v));
+  const show = (id, on) => $(id).style.display = on ? "" : "none";
+  show("lgMask", v === 1); show("lgCasc", v === 2); show("lgGrid", v === 3); show("lgMap", v === 9);
+}
+$("view").addEventListener("change", e => setView(+e.target.value));
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; });
+setView(0);
+
+// ---------- math (column-major) ----------
+const V3 = {
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  scale: (a, s) => [a[0] * s, a[1] * s, a[2] * s], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+};
+const M = {
+  mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; },
+  persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; },
+  ortho(l, r, b, t, n, f) { const o = new Float32Array(16); o[0] = 2 / (r - l); o[5] = 2 / (t - b); o[10] = -2 / (f - n); o[12] = -(r + l) / (r - l); o[13] = -(t + b) / (t - b); o[14] = -(f + n) / (f - n); o[15] = 1; return o; },
+  lookAt(e, c, u) {
+    const z = V3.norm(V3.sub(e, c)), x = V3.norm(V3.cross(u, z)), y = V3.cross(z, x);
+    return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -V3.dot(x, e), -V3.dot(y, e), -V3.dot(z, e), 1]);
+  },
+  xf(m, p) { return [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]]; },
+  trs(t, r, s) {
+    const [cx, cy, cz] = r.map(Math.cos), [sx, sy, sz] = r.map(Math.sin);
+    const Rx = new Float32Array([1, 0, 0, 0, 0, cx, sx, 0, 0, -sx, cx, 0, 0, 0, 0, 1]);
+    const Ry = new Float32Array([cy, 0, -sy, 0, 0, 1, 0, 0, sy, 0, cy, 0, 0, 0, 0, 1]);
+    const Rz = new Float32Array([cz, sz, 0, 0, -sz, cz, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const S = new Float32Array([s[0], 0, 0, 0, 0, s[1], 0, 0, 0, 0, s[2], 0, t[0], t[1], t[2], 1]);
+    const T = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, t[0], t[1], t[2], 1]);
+    S[12] = S[13] = S[14] = 0;
+    return M.mul(T, M.mul(Ry, M.mul(Rx, M.mul(Rz, S))));
+  }
+};
+function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+const lin = c => c.map(x => Math.pow(x, 2.2));
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: true, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+const timerExt = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+
+const depthProg = program(`#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uModel, uLightVP;
+void main(){ gl_Position = uLightVP * uModel * vec4(aPos, 1.0); }`, `#version 300 es
+precision mediump float; out vec4 o; void main(){ o = vec4(1.0); }`);
+
+const sceneProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNor;
+uniform mat4 uModel, uView, uProj, uCamView;
+out vec3 vW; out vec3 vN; out float vViewZ;
+void main(){
+  vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz;
+  vN = transpose(inverse(mat3(uModel))) * aNor;
+  vViewZ = -(uCamView * w).z;
+  gl_Position = uProj * uView * w;
+}`, `#version 300 es
+precision highp float;
+precision highp sampler2DArrayShadow;
+precision highp sampler2DArray;
+in vec3 vW; in vec3 vN; in float vViewZ;
+uniform vec3 uColor; uniform int uChecker;
+uniform sampler2DArrayShadow uShadow;
+uniform sampler2DArray uRaw;
+uniform mat4 uLightVP[4];
+uniform float uSplit[4], uTexelWorld[4], uRange[4];
+uniform int uCascades, uFilter, uMode, uShadowsOn;
+uniform float uSize, uBias, uNormalOffset, uRadius, uSunTan;
+uniform vec3 uSunDir, uCamPos;
+out vec4 o;
+
+const vec2 PD[16] = vec2[16](
+  vec2(-0.94201624,-0.39906216), vec2(0.94558609,-0.76890725), vec2(-0.09418410,-0.92938870), vec2(0.34495938,0.29387760),
+  vec2(-0.91588581,0.45771432), vec2(-0.81544232,-0.87912464), vec2(-0.38277543,0.27676845), vec2(0.97484398,0.75648379),
+  vec2(0.44323325,-0.97511554), vec2(0.53742981,-0.47373420), vec2(-0.26496911,-0.41893023), vec2(0.79197514,0.19090188),
+  vec2(-0.24188840,0.99706507), vec2(-0.81409955,0.91437590), vec2(0.19984126,0.78641367), vec2(0.14383161,-0.14100790));
+const vec3 CC[4] = vec3[4](vec3(1.0,0.42,0.36), vec3(0.36,0.85,0.48), vec3(0.36,0.62,1.0), vec3(1.0,0.82,0.30));
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+
+int cascadeOf(float z){
+  for (int i = 0; i < 4; i++) if (i < uCascades && z < uSplit[i]) return i;
+  return -1;
+}
+
+float shadowAt(vec3 P, vec3 N, int ci, out vec2 suv){
+  suv = vec2(-1.0);
+  if (ci < 0) return 1.0;
+  vec3 Po = P + N * uNormalOffset * uTexelWorld[ci];
+  vec4 lp = uLightVP[ci] * vec4(Po, 1.0);
+  vec3 sc = lp.xyz / lp.w * 0.5 + 0.5;
+  suv = sc.xy;
+  if (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
+  float d = sc.z - uBias / uRange[ci];
+  float L = float(ci), tx = 1.0 / uSize;
+  if (uFilter == 0) return d <= texture(uRaw, vec3(sc.xy, L)).r ? 1.0 : 0.0;
+  if (uFilter == 1) return texture(uShadow, vec4(sc.xy, L, d));
+  if (uFilter <= 4) {
+    int k = uFilter - 1; float s = 0.0, n = 0.0;
+    for (int y = -3; y <= 3; y++) for (int x = -3; x <= 3; x++) {
+      if (abs(x) > k || abs(y) > k) continue;
+      s += texture(uShadow, vec4(sc.xy + vec2(x, y) * tx, L, d)); n += 1.0;
+    }
+    return s / n;
+  }
+  float a = 6.2831853 * hash(gl_FragCoord.xy);
+  mat2 R = mat2(cos(a), sin(a), -sin(a), cos(a));
+  float rad = uRadius;
+  if (uFilter == 6) {
+    float searchTx = clamp(uSunTan * 10.0 / uTexelWorld[ci], 1.5, 40.0);
+    float sum = 0.0, cnt = 0.0;
+    for (int i = 0; i < 16; i++) {
+      float m = texture(uRaw, vec3(sc.xy + R * PD[i] * searchTx * tx, L)).r;
+      if (m < d) { sum += m; cnt += 1.0; }
+    }
+    if (cnt < 0.5) return 1.0;
+    float penWorld = (d - sum / cnt) * uRange[ci] * uSunTan;
+    rad = clamp(penWorld / uTexelWorld[ci], 0.75, 48.0);
+  }
+  float s = 0.0;
+  for (int i = 0; i < 16; i++) s += texture(uShadow, vec4(sc.xy + R * PD[i] * rad * tx, L, d));
+  return s / 16.0;
+}
+
+vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+
+void main(){
+  vec3 A = uColor;
+  if (uChecker == 1) { float k = mod(floor(vW.x * 0.5) + floor(vW.z * 0.5), 2.0); A *= mix(0.8, 1.0, k); }
+  vec3 N = normalize(vN);
+  float ndl = dot(N, uSunDir);
+  int ci = cascadeOf(vViewZ);
+  vec2 suv;
+  float vis = (uShadowsOn == 1 && ndl > 0.0) ? shadowAt(vW, N, ci, suv) : 1.0;
+  if (uShadowsOn == 0 || ndl <= 0.0) shadowAt(vW, N, ci, suv);
+  vec3 sky = vec3(0.30, 0.42, 0.62), gnd = vec3(0.22, 0.19, 0.16);
+  vec3 amb = mix(gnd, sky, N.y * 0.5 + 0.5) * 0.45;
+  vec3 sun = vec3(1.0, 0.90, 0.76) * 2.1;
+  vec3 lit = A * (sun * max(ndl, 0.0) * vis + amb);
+  float dist = length(vW - uCamPos);
+  vec3 fogc = vec3(0.50, 0.62, 0.80);
+  vec3 col = mix(lit, fogc, 1.0 - exp(-dist * 0.006));
+  col = pow(aces(col * 0.62), vec3(1.0 / 2.2));
+  if (uMode == 1) {
+    col = ndl <= 0.0 ? vec3(0.14, 0.25, 0.48) : vec3(vis);
+  } else if (uMode == 2) {
+    vec3 t = ci < 0 ? vec3(0.5) : CC[ci];
+    col = mix(col, col * t * 1.6, 0.75);
+  } else if (uMode == 3) {
+    if (ci >= 0 && suv.x >= 0.0) {
+      vec2 g = suv * uSize;
+      vec2 w = abs(fract(g - 0.5) - 0.5) / max(fwidth(g), vec2(1e-4));
+      float line = 1.0 - min(min(w.x, w.y), 1.0);
+      float dense = clamp(length(fwidth(g)) * 2.0, 0.0, 1.0);
+      vec3 gc = mix(vec3(1.0, 0.82, 0.30), CC[ci], 0.35);
+      col = mix(col * 0.75, gc, line * (1.0 - dense) * 0.9);
+    }
+  } else if (uMode == 4) {
+    col = pow(A * (0.35 + 0.75 * max(ndl, 0.0)), vec3(1.0 / 2.2));
+  }
+  o = vec4(col, 1.0);
+}`);
+
+const mapProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; out vec2 vUV;
+void main(){ vUV = aPos.xy * 0.5 + 0.5; gl_Position = vec4(aPos.xy, 0.0, 1.0); }`, `#version 300 es
+precision highp float; precision highp sampler2DArray;
+in vec2 vUV; uniform sampler2DArray uRaw; uniform float uLayer, uMid, uRange, uR; uniform vec3 uTint;
+out vec4 o;
+void main(){
+  float d = texture(uRaw, vec3(vUV, uLayer)).r;
+  float v = d >= 1.0 ? 0.0 : clamp(0.42 + (uMid - d) * uRange / (0.9 * uR + 10.0), 0.06, 1.0);
+  vec3 c = vec3(v);
+  vec2 e = min(vUV, 1.0 - vUV);
+  if (min(e.x, e.y) < 0.006) c = uTint;
+  o = vec4(c, 1.0);
+}`);
+
+// ---------- meshes ----------
+function mesh(pos, nor, idx) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  if (nor) { const n = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, n); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nor), gl.STATIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0); }
+  let count = 0;
+  if (idx) { const i = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW); count = idx.length; }
+  gl.bindVertexArray(null);
+  return { vao, count };
+}
+function cube() {
+  const P = [], N = [], I = [];
+  [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]].forEach((n, f) => {
+    const u = n[1] !== 0 ? [1, 0, 0] : [0, 1, 0];
+    const v = V3.cross(n, u);
+    const quad = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [0.5 * (n[0] + a * u[0] + b * v[0]), 0.5 * (n[1] + a * u[1] + b * v[1]), 0.5 * (n[2] + a * u[2] + b * v[2])]);
+    quad.forEach(p => { P.push(...p); N.push(...n); });
+    const o = f * 4;
+    const cr = V3.cross(V3.sub(quad[1], quad[0]), V3.sub(quad[2], quad[0]));
+    if (V3.dot(cr, n) > 0) I.push(o, o + 1, o + 2, o, o + 2, o + 3); else I.push(o, o + 2, o + 1, o, o + 3, o + 2);
+  });
+  return mesh(P, N, I);
+}
+function sphere(seg, rings) {
+  const P = [], I = [];
+  for (let r = 0; r <= rings; r++) { const th = Math.PI * r / rings; for (let s = 0; s <= seg; s++) { const ph = 2 * Math.PI * s / seg; P.push(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)); } }
+  const W = seg + 1;
+  for (let r = 0; r < rings; r++) for (let s = 0; s < seg; s++) { const a = r * W + s, b = a + W; I.push(a, a + 1, b, a + 1, b + 1, b); }
+  return mesh(P, P, I);
+}
+const cubeM = cube(), ballM = sphere(36, 22);
+const quad = mesh([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], null, null);
+
+// ---------- scene ----------
+const objs = [];
+const add = (m, t, r, s, c, checker = 0) => { const o = { mesh: m, t, r, s, c: lin(c), checker, M: M.trs(t, r, s) }; objs.push(o); return o; };
+add(cubeM, [0, -0.1, 0], [0, 0, 0], [400, 0.2, 400], [0.74, 0.72, 0.68], 1);
+// table
+add(cubeM, [0, 1.0, 0], [0, 0, 0], [3, 0.12, 1.8], [0.62, 0.45, 0.32]);
+for (const [x, z] of [[-1.35, -0.75], [1.35, -0.75], [-1.35, 0.75], [1.35, 0.75]]) add(cubeM, [x, 0.47, z], [0, 0, 0], [0.1, 0.94, 0.1], [0.55, 0.40, 0.28]);
+// fence with thin slats
+for (let i = 0; i <= 24; i++) add(cubeM, [-6 + i * 0.5, 0.75, -4], [0, 0, 0], [0.08, 1.5, 0.08], [0.86, 0.84, 0.80]);
+add(cubeM, [0, 0.45, -4], [0, 0, 0], [12.4, 0.07, 0.07], [0.86, 0.84, 0.80]);
+add(cubeM, [0, 1.25, -4], [0, 0, 0], [12.4, 0.07, 0.07], [0.86, 0.84, 0.80]);
+// ramp (sloped surface: acne shows up here first)
+add(cubeM, [6.5, 0.7, 1.5], [0, 0, 0.28], [4.5, 0.15, 2.6], [0.70, 0.74, 0.80]);
+// spheres
+add(ballM, [-3.6, 1.0, 2.6], [0, 0, 0], [1, 1, 1], [0.82, 0.36, 0.30]);
+add(ballM, [-1.8, 0.45, 3.4], [0, 0, 0], [0.45, 0.45, 0.45], [0.30, 0.55, 0.82]);
+// spinning cube
+const spinner = add(cubeM, [3.2, 2.4, -1.2], [0.4, 0.3, 0], [1.2, 1.2, 1.2], [0.92, 0.78, 0.30]);
+// tower
+add(cubeM, [-11, 6, -9], [0, 0.3, 0], [2.2, 12, 2.2], [0.66, 0.68, 0.72]);
+// distant scatter
+const R = rng(11), pal = [[0.80, 0.78, 0.74], [0.62, 0.66, 0.72], [0.76, 0.66, 0.56], [0.66, 0.72, 0.62]];
+for (let i = 0; i < 70; i++) {
+  const ang = R() * Math.PI * 2, rad = 14 + R() * 90, x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
+  const c = pal[Math.floor(R() * pal.length)];
+  if (R() < 0.7) { const h = 1 + R() * 7, w = 0.8 + R() * 2.5; add(cubeM, [x, h / 2, z], [0, R() * 3, 0], [w, h, w * (0.6 + R())], c); }
+  else { const r = 0.6 + R() * 1.6; add(ballM, [x, r, z], [0, 0, 0], [r, r, r], c); }
+}
+
+// ---------- shadow map resources ----------
+let shadowTex = null, shadowSize = 0, shadowLayers = 0;
+const shadowFBO = gl.createFramebuffer();
+const cmpSampler = gl.createSampler();
+gl.samplerParameteri(cmpSampler, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.samplerParameteri(cmpSampler, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.samplerParameteri(cmpSampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.samplerParameteri(cmpSampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.samplerParameteri(cmpSampler, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE); gl.samplerParameteri(cmpSampler, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+const rawSampler = gl.createSampler();
+gl.samplerParameteri(rawSampler, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.samplerParameteri(rawSampler, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.samplerParameteri(rawSampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.samplerParameteri(rawSampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+function ensureShadowTex() {
+  if (shadowTex && shadowSize === state.res && shadowLayers === state.casc) return;
+  if (shadowTex) gl.deleteTexture(shadowTex);
+  shadowTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, shadowTex);
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.DEPTH_COMPONENT32F, state.res, state.res, state.casc);
+  shadowSize = state.res; shadowLayers = state.casc;
+  $("sMem").textContent = `${state.casc} × ${state.res}² × 4 B = ${(state.casc * state.res * state.res * 4 / 1048576).toFixed(1)} MB`;
+}
+
+// ---------- camera ----------
+const cam = { yaw: 0.95, pitch: 0.42, dist: 13, tgt: [0, 1, 0] };
+const camDefault = JSON.stringify(cam);
+let drag = null; const pointers = new Map();
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); if (!pointers.size) drag = null; });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [c, d] = [...pointers.values()]; const d1 = Math.hypot(c[0] - d[0], c[1] - d[1]);
+    if (d0 > 0 && d1 > 0) cam.dist = Math.min(150, Math.max(2, cam.dist * d0 / d1));
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) {
+    const s = cam.dist * 0.0016, cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    cam.tgt[0] += sy * dx * s; cam.tgt[2] -= cy * dx * s; cam.tgt[1] = Math.max(0, cam.tgt[1] + dy * s);
+  } else { cam.yaw += dx * 0.006; cam.pitch = Math.max(0.03, Math.min(1.5, cam.pitch + dy * 0.006)); }
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(150, Math.max(2, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+$("reset").addEventListener("click", () => Object.assign(cam, JSON.parse(camDefault)));
+
+// ---------- cascades ----------
+const FOV = 0.9, NEAR = 0.1;
+function computeCascades(eye, fwd, right, up, aspect, sunDir) {
+  const n = state.casc, far = state.dist, out = [];
+  const splits = [];
+  for (let i = 1; i <= n; i++) {
+    const u = NEAR + (far - NEAR) * i / n, l = NEAR * Math.pow(far / NEAR, i / n);
+    splits.push(state.lambda * l + (1 - state.lambda) * u);
+  }
+  const th = Math.tan(FOV / 2);
+  const lUp = Math.abs(sunDir[1]) > 0.99 ? [0, 0, 1] : [0, 1, 0];
+  for (let i = 0; i < n; i++) {
+    const d0 = i === 0 ? NEAR : splits[i - 1], d1 = splits[i];
+    const corners = [];
+    for (const d of [d0, d1]) {
+      const h = d * th, w = h * aspect, c = V3.add(eye, V3.scale(fwd, d));
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) corners.push(V3.add(c, V3.add(V3.scale(right, sx * w), V3.scale(up, sy * h))));
+    }
+    let center = [0, 0, 0]; corners.forEach(p => center = V3.add(center, p)); center = V3.scale(center, 1 / 8);
+    let radius = 0; corners.forEach(p => radius = Math.max(radius, Math.hypot(...V3.sub(p, center))));
+    radius = Math.ceil(radius * 16) / 16;
+    const back = 80;
+    const leye = V3.add(center, V3.scale(sunDir, radius + back));
+    const view = M.lookAt(leye, center, lUp);
+    const nearZ = 0.0, farZ = 2 * radius + back + 10;
+    let proj, extent;
+    if (state.stable) {
+      proj = M.ortho(-radius, radius, -radius, radius, nearZ, farZ); extent = 2 * radius;
+      const vp = M.mul(proj, view), o = M.xf(vp, [0, 0, 0]);
+      const half = state.res / 2, ox = o[0] * half, oy = o[1] * half;
+      proj[12] += (Math.round(ox) - ox) / half; proj[13] += (Math.round(oy) - oy) / half;
+    } else {
+      let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
+      corners.forEach(p => { const q = M.xf(view, p); mnx = Math.min(mnx, q[0]); mxx = Math.max(mxx, q[0]); mny = Math.min(mny, q[1]); mxy = Math.max(mxy, q[1]); });
+      proj = M.ortho(mnx, mxx, mny, mxy, nearZ, farZ); extent = Math.max(mxx - mnx, mxy - mny);
+    }
+    const vpm = M.mul(proj, view), g = M.xf(vpm, [center[0], 0, center[2]]);
+    out.push({ view, proj, vp: vpm, split: d1, extent, texel: extent / state.res, range: farZ - nearZ, mid: g[2] * 0.5 + 0.5 });
+  }
+  return out;
+}
+
+// ---------- timers ----------
+const timers = {};
+function timerBegin(name) {
+  if (!timerExt) return false;
+  const t = timers[name] || (timers[name] = { q: null, ms: null });
+  if (t.q) return false;
+  t.q = gl.createQuery(); gl.beginQuery(timerExt.TIME_ELAPSED_EXT, t.q); return true;
+}
+function timerEnd(started) { if (started) gl.endQuery(timerExt.TIME_ELAPSED_EXT); }
+function timerPoll() {
+  if (!timerExt) return;
+  const disjoint = gl.getParameter(timerExt.GPU_DISJOINT_EXT);
+  for (const k in timers) {
+    const t = timers[k];
+    if (t.q && gl.getQueryParameter(t.q, gl.QUERY_RESULT_AVAILABLE)) {
+      if (!disjoint) { const ms = gl.getQueryParameter(t.q, gl.QUERY_RESULT) / 1e6; t.ms = t.ms == null ? ms : t.ms * 0.85 + ms * 0.15; }
+      gl.deleteQuery(t.q); t.q = null;
+    }
+  }
+}
+const msTxt = k => !timerExt ? "n/a in this browser" : (timers[k] && timers[k].ms != null) ? timers[k].ms.toFixed(2) + " ms" : "measuring…";
+
+// ---------- render ----------
+let W = 0, H = 0;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (w !== W || h !== H) { W = w; H = h; canvas.width = w; canvas.height = h; stripEl.style.setProperty("--ar", (w / h).toFixed(3)); }
+}
+const vpAll = new Float32Array(64);
+function drawScene(view, proj, camView, camPos, mode, C, sunDir) {
+  const u = sceneProg.u;
+  gl.useProgram(sceneProg.p);
+  gl.uniformMatrix4fv(u.uView, false, view); gl.uniformMatrix4fv(u.uProj, false, proj); gl.uniformMatrix4fv(u.uCamView, false, camView);
+  gl.uniform3fv(u.uCamPos, camPos); gl.uniform1i(u.uMode, mode);
+  for (const o of objs) {
+    gl.uniformMatrix4fv(u.uModel, false, o.M); gl.uniform3fv(u.uColor, o.c); gl.uniform1i(u.uChecker, o.checker);
+    gl.bindVertexArray(o.mesh.vao); gl.drawElements(gl.TRIANGLES, o.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+}
+function setSceneShadowUniforms(C, sunDir) {
+  const u = sceneProg.u;
+  gl.useProgram(sceneProg.p);
+  vpAll.fill(0); C.forEach((c, i) => vpAll.set(c.vp, i * 16));
+  gl.uniformMatrix4fv(u.uLightVP, false, vpAll);
+  const pad = a => { const r = new Float32Array(4); a.forEach((v, i) => r[i] = v); return r; };
+  gl.uniform1fv(u.uSplit, pad(C.map(c => c.split))); gl.uniform1fv(u.uTexelWorld, pad(C.map(c => c.texel))); gl.uniform1fv(u.uRange, pad(C.map(c => c.range)));
+  gl.uniform1i(u.uCascades, C.length); gl.uniform1i(u.uFilter, state.filter); gl.uniform1i(u.uShadowsOn, state.shadowsOn ? 1 : 0);
+  gl.uniform1f(u.uSize, state.res); gl.uniform1f(u.uBias, state.bias); gl.uniform1f(u.uNormalOffset, state.normal);
+  gl.uniform1f(u.uRadius, state.radius); gl.uniform1f(u.uSunTan, Math.tan(state.sunsize * Math.PI / 180));
+  gl.uniform3fv(u.uSunDir, sunDir);
+  gl.uniform1i(u.uShadow, 0); gl.uniform1i(u.uRaw, 1);
+}
+function squareIn(x, y, w, h) { const s = Math.min(w, h); return [x + Math.floor((w - s) / 2), y + Math.floor((h - s) / 2), s, s]; }
+function drawShadowMaps(x, y, w, h, C) {
+  const n = C.length, cols = n === 1 ? 1 : 2, rows = n <= 2 ? 1 : 2;
+  const [sx, sy, s] = squareIn(x, y, w, h);
+  const cw = Math.floor(s / Math.max(cols, rows));
+  gl.useProgram(mapProg.p); gl.uniform1i(mapProg.u.uRaw, 1);
+  gl.bindVertexArray(quad.vao);
+  const offX = sx + Math.floor((s - cw * cols) / 2), offY = sy + Math.floor((s - cw * rows) / 2);
+  for (let i = 0; i < n; i++) {
+    const cx = i % cols, cy = rows - 1 - Math.floor(i / cols);
+    gl.viewport(offX + cx * cw, offY + cy * cw, cw, cw);
+    const col = CASC_COL[i].match(/\w\w/g).map(h => parseInt(h, 16) / 255);
+    gl.uniform1f(mapProg.u.uLayer, i); gl.uniform3fv(mapProg.u.uTint, col);
+    gl.uniform1f(mapProg.u.uMid, C[i].mid); gl.uniform1f(mapProg.u.uRange, C[i].range); gl.uniform1f(mapProg.u.uR, C[i].extent / 2);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+}
+function drawView(mode, x, y, w, h, ctx) {
+  gl.enable(gl.SCISSOR_TEST); gl.scissor(x, y, w, h);
+  const bg = mode === 9 || mode === 4 ? [0.03, 0.035, 0.045] : [0.50, 0.62, 0.80];
+  gl.clearColor(bg[0], bg[1], bg[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (mode === 9) { gl.disable(gl.DEPTH_TEST); drawShadowMaps(x, y, w, h, ctx.C); }
+  else if (mode === 4) {
+    const [sx, sy, s] = squareIn(x, y, w, h); gl.viewport(sx, sy, s, s);
+    gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+    drawScene(ctx.C[0].view, ctx.C[0].proj, ctx.camView, ctx.eye, 4, ctx.C, ctx.sunDir);
+  } else {
+    gl.viewport(x, y, w, h);
+    gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+    const proj = M.persp(FOV, w / h, NEAR, 600);
+    drawScene(ctx.camView, proj, ctx.camView, ctx.eye, mode, ctx.C, ctx.sunDir);
+  }
+  gl.disable(gl.SCISSOR_TEST); gl.disable(gl.CULL_FACE);
+}
+
+let simT = 0, last = performance.now(), frame = 0;
+function render(now) {
+  requestAnimationFrame(render);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; simT += dt;
+  resize(); ensureShadowTex(); timerPoll();
+  if (state.animSun) { setRange("az", (state.az + dt * 12) % 360); }
+  if (state.orbit) cam.yaw += dt * 0.08;
+  if (state.animObj) { spinner.r = [simT * 0.7, simT * 0.9, 0.2]; spinner.M = M.trs(spinner.t, spinner.r, spinner.s); }
+
+  const az = state.az * Math.PI / 180, el = state.el * Math.PI / 180;
+  const sunDir = [Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)];
+  const eye = [cam.tgt[0] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), cam.tgt[1] + cam.dist * Math.sin(cam.pitch), cam.tgt[2] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw)];
+  const camView = M.lookAt(eye, cam.tgt, [0, 1, 0]);
+  const fwd = V3.norm(V3.sub(cam.tgt, eye)), right = V3.norm(V3.cross(fwd, [0, 1, 0])), up = V3.cross(right, fwd);
+  const C = computeCascades(eye, fwd, right, up, W / H, sunDir);
+
+  // pass 1: shadow maps (depth only, one layer per cascade)
+  const tS = timerBegin("shadow");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFBO);
+  gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+  gl.useProgram(depthProg.p);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
+  gl.enable(gl.CULL_FACE); gl.cullFace(state.cull ? gl.FRONT : gl.BACK);
+  if (state.slope > 0) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(state.slope, 1); } else gl.disable(gl.POLYGON_OFFSET_FILL);
+  gl.viewport(0, 0, state.res, state.res);
+  for (let i = 0; i < C.length; i++) {
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, shadowTex, 0, i);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.uniformMatrix4fv(depthProg.u.uLightVP, false, C[i].vp);
+    for (const o of objs) { gl.uniformMatrix4fv(depthProg.u.uModel, false, o.M); gl.bindVertexArray(o.mesh.vao); gl.drawElements(gl.TRIANGLES, o.mesh.count, gl.UNSIGNED_SHORT, 0); }
+  }
+  gl.disable(gl.POLYGON_OFFSET_FILL); gl.disable(gl.CULL_FACE);
+  timerEnd(tS);
+
+  // pass 2: camera view, with the shadow map bound twice (compare sampler + raw sampler)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D_ARRAY, shadowTex); gl.bindSampler(0, cmpSampler);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D_ARRAY, shadowTex); gl.bindSampler(1, rawSampler);
+  setSceneShadowUniforms(C, sunDir);
+  const ctx = { C, camView, eye, sunDir };
+  const tM = timerBegin("main");
+  drawView(state.view, 0, 0, W, H, ctx);
+  timerEnd(tM);
+
+  if (state.strip) {
+    const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+    for (const t of thumbs) {
+      const r = t.el.getBoundingClientRect();
+      const x = Math.round((r.left - cr.left + 1) * sx), y = Math.round((cr.bottom - r.bottom + 1) * sy);
+      const w = Math.round((r.width - 2) * sx), h = Math.round((r.height - 2) * sy);
+      if (w > 4 && h > 4) drawView(t.v, x, y, w, h, ctx);
+    }
+  }
+
+  if (frame++ % 15 === 0) {
+    $("cascTable").innerHTML = C.map((c, i) => `<tr><td><span class="sw" style="background:${CASC_COL[i]}"></span>${i + 1}</td><td>${c.split.toFixed(1)} m</td><td>${c.extent.toFixed(1)} m</td><td>${(c.texel * 100).toFixed(1)} cm</td></tr>`).join("");
+    $("lgCasc").innerHTML = C.map((c, i) => `<span style="--c:${CASC_COL[i]}">cascade ${i + 1}: up to ${c.split.toFixed(1)} m from the camera</span>`).join("") + `<span style="--c:#808080">beyond ${state.dist} m: no shadows</span>`;
+    $("hudTexel").innerHTML = `nearest texel <b>${(C[0].texel * 100).toFixed(1)} cm</b> · ${C.length} × ${state.res}²`;
+    $("sGpuS").textContent = msTxt("shadow"); $("sGpuM").textContent = msTxt("main");
+    $("hudTime").textContent = timerExt ? `GPU shadow ${msTxt("shadow")} · main ${msTxt("main")}` : "GPU timer n/a in this browser";
+  }
+}
+try { resize(); requestAnimationFrame(render); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

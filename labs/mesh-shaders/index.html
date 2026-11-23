@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesh Shader Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport with a pipeline-stage strip, instrument panel on the right; stacks on narrow screens. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #7fd6a4;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 380px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas#c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas#c:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.82); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 132px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.note { font-size: 12.5px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid #e3b563; border-radius: 0; padding: 9px 12px; margin-top: 10px; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 8px; }
+.pipe { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font: 500 11px var(--font-mono); margin-top: 10px; color: var(--muted); }
+.pipe span { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); }
+.pipe span.t { border-color: var(--accent); color: var(--accent); }
+.row { display: grid; grid-template-columns: 108px 1fr 58px; align-items: center; gap: 8px; margin: 5px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+.dim { opacity: .4; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+button.p.on { border-color: var(--accent); color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+pre#code { margin: 8px 0 0; font: 11.5px/1.5 var(--font-mono); background: #0f1217; border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; white-space: pre; color: #cfd6e2; max-height: 360px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.key { display: none; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL view of meshes split into meshlets"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudM">meshlets</span>
+      <span class="chip" id="hudT">triangles</span>
+      <span class="chip" id="hudCam">camera</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll or pinch to zoom</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Mesh shader lab</h1>
+      <p class="sub">A mesh shader pipeline stops drawing one big index buffer. The mesh is cut ahead of time into small pieces called <em>meshlets</em>. A task shader then decides, per meshlet, whether it is worth drawing at all, and a mesh shader turns each surviving meshlet into vertices and triangles.</p>
+      <div class="pipe"><span>meshlets (built offline)</span>→<span class="t">task shader</span>→<span class="t">mesh shader</span>→<span>rasterizer</span>→<span>fragment</span></div>
+      <div class="note">Browsers cannot run mesh shaders: WebGL 2 has none, and for WebGPU they are still an open feature request. This lab runs the same pipeline by other means. JavaScript builds the meshlets and does the task shader's culling. A vertex shader does the mesh shader's work by reading the meshlet buffers from textures. One real difference: a mesh shader transforms each meshlet vertex once, while this emulation transforms it once per triangle corner.</div>
+    </div>
+
+    <section>
+      <h2>Scene</h2>
+      <div class="btns" id="scenes">
+        <button class="p" type="button" data-s="0">Torus knot</button>
+        <button class="p" type="button" data-s="1">Rock</button>
+        <button class="p on" type="button" data-s="2">Field of 64 objects</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>1. Meshlet builder (offline step)</h2>
+      <select id="builder" aria-label="How triangles are grouped into meshlets">
+        <option value="1" selected>Greedy: grow compact patches</option>
+        <option value="0">Index order: cut the index buffer into runs</option>
+      </select>
+      <div class="explain" id="exB"></div>
+      <div class="row"><label for="maxV">Max vertices</label><input id="maxV" type="range" min="8" max="128" step="1" value="64"><output id="maxVV"></output></div>
+      <div class="row"><label for="maxT">Max triangles</label><input id="maxT" type="range" min="8" max="200" step="1" value="124"><output id="maxTV"></output></div>
+    </section>
+
+    <section>
+      <h2>2. Task shader: which meshlets are worth drawing?</h2>
+      <div class="checks">
+        <label><input type="checkbox" id="frustum" checked> Frustum culling (bounding sphere outside the view)</label>
+        <label><input type="checkbox" id="cone" checked> Cone culling (every triangle faces away)</label>
+      </div>
+      <div class="row" style="margin-top:8px"><label for="lod">Level of detail</label><select id="lod"><option value="1" selected>Pick by size on screen</option><option value="0">Always the full mesh</option></select></div>
+      <div class="row" id="rLod"><label for="lodPx">Full detail above</label><input id="lodPx" type="range" min="20" max="400" step="5" value="110"><output id="lodPxV"></output></div>
+      <div class="explain" id="exT">The task shader runs once per group of meshlets. It tests each one against the camera and emits mesh shader work only for the survivors. Culled meshlets cost nothing after this point: no vertex is transformed for them.</div>
+    </section>
+
+    <section>
+      <h2>3. Mesh shader: meshlet in, triangles out</h2>
+      <div class="explain">One mesh shader run handles one meshlet. It loads the meshlet's vertices, transforms them, and writes the triangle list as small local indices. It can also write values per triangle, with no vertex duplication. The <b>Triangles</b> and <b>Meshlets</b> stages are colored that way.</div>
+    </section>
+
+    <section>
+      <h2>Display</h2>
+      <div class="row"><label for="view">View</label><select id="view">
+        <option value="0">Final image (main camera)</option>
+        <option value="1">Triangles (main camera)</option>
+        <option value="2">Meshlets (main camera)</option>
+        <option value="3">Bounds and cones (observer)</option>
+        <option value="4" selected>Task shader result (observer)</option>
+        <option value="5">Level of detail (observer)</option>
+      </select></div>
+      <div class="key" id="key3"><span><i style="background:#3dbf68"></i>narrow cone</span><span><i style="background:#f2cc40"></i>wide cone</span><span><i style="background:#c0338c"></i>no usable cone</span></div>
+      <div class="key" id="key4"><span><i style="background:#9fb0e8"></i>drawn (one color per meshlet)</span><span><i style="background:#2a3040"></i>frustum-culled</span><span><i style="background:#80201f"></i>cone-culled</span><span><i style="background:#ffc64d"></i>main camera's view volume</span></div>
+      <div class="key" id="key5"><span><i style="background:#e6594d"></i>LOD 0 (full)</span><span><i style="background:#f2cc4d"></i>LOD 1</span><span><i style="background:#4dbf80"></i>LOD 2 (coarse)</span></div>
+      <div class="checks" style="margin-top:8px">
+        <label><input type="checkbox" id="auto" checked> Rotate the main camera automatically</label>
+        <label><input type="checkbox" id="spheres"> Bounding spheres (observer views)</label>
+        <label><input type="checkbox" id="wire"> Wireframe on the final image</label>
+        <label><input type="checkbox" id="stripOn" checked> Show pipeline stages under the scene</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>The real thing (Vulkan GLSL, GL_EXT_mesh_shader)</h2>
+      <div class="btns" id="tabs">
+        <button class="p on" type="button" data-t="0">Meshlet data</button>
+        <button class="p" type="button" data-t="1">Task shader</button>
+        <button class="p" type="button" data-t="2">Mesh shader</button>
+      </div>
+      <pre id="code"></pre>
+    </section>
+
+    <section>
+      <h2>Measured</h2>
+      <dl class="kv">
+        <dt>Objects</dt><dd id="sInst">–</dd>
+        <dt>Meshlets (after level of detail)</dt><dd id="sMl">–</dd>
+        <dt>Frustum-culled</dt><dd id="sFr">–</dd>
+        <dt>Cone-culled</dt><dd id="sCo">–</dd>
+        <dt>Drawn</dt><dd id="sDr">–</dd>
+        <dt>Triangles: full → after LOD → drawn</dt><dd id="sTri">–</dd>
+        <dt>Average meshlet fill</dt><dd id="sFill">–</dd>
+        <dt>Meshlets with a usable cone</dt><dd id="sCone">–</dd>
+        <dt>Vertex transforms: mesh shader / this lab</dt><dd id="sVs">–</dd>
+        <dt>Builder time (JavaScript)</dt><dd id="sBuild">–</dd>
+        <dt>Task step time (JavaScript)</dt><dd id="sTask">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Watch <b>Task shader result</b>: the yellow volume is what the main camera sees. Meshlets outside it turn dark, and meshlets on the far side of each object turn red.</li>
+        <li>Switch to <b>Final image</b>. Nothing looks missing, although most meshlets are skipped. That is the whole point of culling.</li>
+        <li>Turn <b>Cone culling</b> off and on and read <b>Drawn</b> in the Measured list.</li>
+        <li>Pick <b>Torus knot</b>, open <b>Bounds and cones</b>, and switch the builder to <b>Index order</b>. The meshlets become rings around the tube, their normals point everywhere, and no cone is usable.</li>
+        <li>Drag <b>Max triangles</b> down to 16, then up to 200. Small meshlets cull more precisely but there are many more to test; large ones have wide cones.</li>
+        <li>Set <b>Max vertices</b> to 16 with 124 triangles: the vertex limit is reached first, so the triangle budget is wasted. Check <b>Average meshlet fill</b>.</li>
+        <li>Open <b>Level of detail</b> and move <b>Full detail above</b>. Objects far from the main camera switch to coarser meshes before any meshlet is tested.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let dirty = true, fullRefresh = true, rebuildNeeded = true, settle = 0;
+
+const EX_B = [
+  "The simplest builder: walk the index buffer and start a new meshlet whenever the vertex or triangle limit is reached. It is fast, but a meshlet is only as compact as the index order happens to be. On the torus knot the order runs around the tube, so each meshlet is a closed ring.",
+  "Start from one triangle and keep adding the neighboring triangle that fits best: one that reuses vertices already in the meshlet, lies close to its center, and faces a similar direction. This gives compact patches with narrow normal cones, which is what makes cone culling work."
+];
+
+// ---------- state + UI ----------
+const state = { scene: 2, builder: 1, maxV: 64, maxT: 124, frustum: true, cone: true, lod: 1, lodPx: 110, wire: false, spheres: false, auto: true, strip: true, view: 4, tab: 0 };
+const fmt = { maxV: v => String(v), maxT: v => String(v), lodPx: v => v + " px" };
+for (const k in fmt) { const el = $(k), out = $(k + "V"); const upd = () => { state[k] = +el.value; out.textContent = fmt[k](state[k]); if (k !== "lodPx") rebuildNeeded = true; touch(); }; el.addEventListener("input", upd); upd(); }
+for (const k of ["frustum", "cone", "wire", "spheres", "auto"]) $(k).addEventListener("change", e => { state[k] = e.target.checked; touch(); });
+$("builder").addEventListener("change", e => { state.builder = +e.target.value; rebuildNeeded = true; syncUI(); touch(); });
+$("lod").addEventListener("change", e => { state.lod = +e.target.value; syncUI(); touch(); });
+function touch() { dirty = true; fullRefresh = true; }
+document.querySelectorAll("#scenes button").forEach(b => b.addEventListener("click", () => { state.scene = +b.dataset.s; document.querySelectorAll("#scenes button").forEach(x => x.classList.toggle("on", x === b)); buildScene(); touch(); }));
+document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => { state.tab = +b.dataset.t; document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b)); syncUI(); }));
+const STAGES = [[1, "1 Triangles"], [2, "2 Meshlets"], [3, "3 Bounds + cones"], [4, "4 Task shader"], [5, "5 Level of detail"], [0, "6 Final image"]];
+const stripEl = $("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+const isObs = v => v >= 3 && v <= 5;
+function setView(v) {
+  state.view = v; $("view").value = String(v); thumbs.forEach(t => t.el.classList.toggle("on", t.v === v));
+  for (const k of [3, 4, 5]) $("key" + k).style.display = v === k ? "flex" : "none";
+  $("hudCam").innerHTML = `drag moves: <b>${isObs(v) ? "observer camera" : "main camera"}</b>`; touch();
+}
+$("view").addEventListener("change", e => setView(+e.target.value));
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; rectsDirty = true; touch(); });
+
+function codeText() {
+  const V = state.maxV, T = state.maxT;
+  if (state.tab === 0) return `// Built once, offline, and stored next to the mesh.
+struct Meshlet {
+  uint vertexOffset;     // where its vertex list starts in meshletVertices[]
+  uint triangleOffset;   // where its triangles start in meshletTriangles[]
+  uint vertexCount;      // at most ${V}
+  uint triangleCount;    // at most ${T}
+};
+struct MeshletBounds {
+  vec3 center; float radius;        // bounding sphere, for frustum culling
+  vec3 coneAxis; float coneCutoff;  // normal cone, for backface culling
+};
+
+Meshlet       meshlets[];
+MeshletBounds bounds[];
+uint          meshletVertices[];    // meshlet-local index -> index into the vertex buffer
+uint8_t       meshletTriangles[];   // 3 local indices per triangle, one byte each
+
+// The mesh's ordinary vertex buffer is unchanged. Its index buffer is gone:
+// meshletVertices + meshletTriangles replace it.`;
+  if (state.tab === 1) return `#version 460
+#extension GL_EXT_mesh_shader : require
+// Task shader: one run looks at up to 32 meshlets and decides which to draw.
+layout(local_size_x = 1) in;
+
+struct Payload { uint meshletIndex[32]; };
+taskPayloadSharedEXT Payload payload;       // handed to the mesh shaders it launches
+
+uniform vec4 frustumPlanes[6]; uniform vec3 eye; uniform uint meshletCount;
+
+bool outsideFrustum(vec3 c, float r) {
+  for (int i = 0; i < 6; i++)
+    if (dot(frustumPlanes[i].xyz, c) + frustumPlanes[i].w < -r) return true;
+  return false;
+}
+// True when every triangle in the meshlet faces away from the eye.
+bool backfacing(vec3 c, float r, vec3 axis, float cutoff) {
+  vec3 d = c - eye;
+  return dot(d, axis) >= cutoff * length(d) + r;
+}
+
+void main() {
+  uint first = gl_WorkGroupID.x * 32u, count = 0u;
+  for (uint i = 0u; i < 32u; i++) {
+    uint m = first + i;
+    if (m >= meshletCount) break;
+    MeshletBounds b = bounds[m];${state.frustum ? "\n    if (outsideFrustum(b.center, b.radius)) continue;" : ""}${state.cone ? "\n    if (backfacing(b.center, b.radius, b.coneAxis, b.coneCutoff)) continue;" : ""}
+    payload.meshletIndex[count++] = m;      // survivor
+  }
+  EmitMeshTasksEXT(count, 1, 1);            // launch one mesh shader per survivor
+}`;
+  return `#version 460
+#extension GL_EXT_mesh_shader : require
+// Mesh shader: one run outputs one whole meshlet.
+layout(local_size_x = 1) in;
+layout(triangles, max_vertices = ${V}, max_primitives = ${T}) out;
+
+struct Payload { uint meshletIndex[32]; };
+taskPayloadSharedEXT Payload payload;
+
+layout(location = 0) out vec3 vNormal[];                    // per vertex
+layout(location = 1) perprimitiveEXT out vec3 pColor[];     // per triangle
+
+uniform mat4 viewProj;
+
+void main() {
+  uint mi = payload.meshletIndex[gl_WorkGroupID.x];
+  Meshlet m = meshlets[mi];
+  SetMeshOutputsEXT(m.vertexCount, m.triangleCount);
+
+  for (uint i = 0u; i < m.vertexCount; i++) {               // each vertex once
+    uint v = meshletVertices[m.vertexOffset + i];
+    gl_MeshVerticesEXT[i].gl_Position = viewProj * vec4(positions[v], 1.0);
+    vNormal[i] = normals[v];
+  }
+  for (uint i = 0u; i < m.triangleCount; i++) {
+    uint o = m.triangleOffset + 3u * i;
+    gl_PrimitiveTriangleIndicesEXT[i] =
+      uvec3(meshletTriangles[o], meshletTriangles[o + 1u], meshletTriangles[o + 2u]);
+    pColor[i] = colorFromId(mi);                            // one value for the whole triangle
+  }
+}`;
+}
+function syncUI() {
+  $("exB").textContent = EX_B[state.builder];
+  $("rLod").classList.toggle("dim", !state.lod);
+  $("code").textContent = codeText();
+}
+
+// ---------- math ----------
+const nrm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function mul4(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; }
+function persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; }
+function lookAt(e, c, u) { const z = nrm([e[0] - c[0], e[1] - c[1], e[2] - c[2]]), x = nrm(cross(u, z)), y = cross(z, x); return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1]); }
+function h3(x, y, z) { let n = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 1274126177)) | 0; n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; }
+function noise3(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z); let fx = x - xi, fy = y - yi, fz = z - zi;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
+  const L = (a, b, t) => a + (b - a) * t;
+  return L(L(L(h3(xi, yi, zi), h3(xi + 1, yi, zi), fx), L(h3(xi, yi + 1, zi), h3(xi + 1, yi + 1, zi), fx), fy), L(L(h3(xi, yi, zi + 1), h3(xi + 1, yi, zi + 1), fx), L(h3(xi, yi + 1, zi + 1), h3(xi + 1, yi + 1, zi + 1), fx), fy), fz);
+}
+function fbm3(x, y, z) { let s = 0, a = 0.5; for (let i = 0; i < 4; i++) { s += a * noise3(x, y, z); x = x * 2.03 + 7.1; y = y * 2.03 + 3.3; z = z * 2.03 + 5.7; a *= 0.5; } return s; }
+
+// ---------- source meshes: each object exists at three levels of detail ----------
+function fixWinding(pos, idx, ref) {       // make every triangle counter-clockwise when seen from outside
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+    const n = cross([pos[b] - pos[a], pos[b + 1] - pos[a + 1], pos[b + 2] - pos[a + 2]], [pos[c] - pos[a], pos[c + 1] - pos[a + 1], pos[c + 2] - pos[a + 2]]);
+    if (n[0] * (ref[a] + ref[b] + ref[c]) + n[1] * (ref[a + 1] + ref[b + 1] + ref[c + 1]) + n[2] * (ref[a + 2] + ref[b + 2] + ref[c + 2]) < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; }
+  }
+}
+function smoothNormals(pos, idx) {
+  const n = new Float32Array(pos.length);
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+    const f = cross([pos[b] - pos[a], pos[b + 1] - pos[a + 1], pos[b + 2] - pos[a + 2]], [pos[c] - pos[a], pos[c + 1] - pos[a + 1], pos[c + 2] - pos[a + 2]]);
+    for (const v of [a, b, c]) { n[v] += f[0]; n[v + 1] += f[1]; n[v + 2] += f[2]; }
+  }
+  for (let v = 0; v < n.length; v += 3) { const l = Math.hypot(n[v], n[v + 1], n[v + 2]) || 1; n[v] /= l; n[v + 1] /= l; n[v + 2] /= l; }
+  return n;
+}
+function makeRock(level) {
+  const t = (1 + Math.sqrt(5)) / 2;
+  const V = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(nrm);
+  let F = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+  for (let l = 0; l < level; l++) {
+    const cache = new Map(), F2 = [];
+    const mid = (a, b) => { const k = a < b ? a * 100000 + b : b * 100000 + a; let m = cache.get(k); if (m === undefined) { m = V.length; V.push(nrm([V[a][0] + V[b][0], V[a][1] + V[b][1], V[a][2] + V[b][2]])); cache.set(k, m); } return m; };
+    for (const [a, b, c] of F) { const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a); F2.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]); }
+    F = F2;
+  }
+  const pos = new Float32Array(V.length * 3), ref = new Float32Array(V.length * 3);
+  V.forEach((v, i) => { const r = 0.72 + 0.62 * fbm3(v[0] * 1.5 + 3.1, v[1] * 1.5 + 1.7, v[2] * 1.5 + 9.2); pos.set([v[0] * r, v[1] * r * 0.85, v[2] * r], i * 3); ref.set(v, i * 3); });
+  const idx = new Uint32Array(F.length * 3); F.forEach((f, i) => idx.set(f, i * 3));
+  fixWinding(pos, idx, ref);
+  return { pos, idx, nrm: smoothNormals(pos, idx) };
+}
+function makeKnot(S, R) {
+  const kp = u => { const qu = 1.5 * u, cs = Math.cos(qu); return [(2 + cs) * 0.5 * Math.cos(u), Math.sin(qu) * 0.5, (2 + cs) * 0.5 * Math.sin(u)]; };
+  const pos = new Float32Array(S * R * 3), nr = new Float32Array(S * R * 3), idx = new Uint32Array(S * R * 6), tube = 0.3;
+  for (let i = 0; i < S; i++) {
+    const u = i / S * 4 * Math.PI, P1 = kp(u), P2 = kp(u + 0.01);
+    const T = [P2[0] - P1[0], P2[1] - P1[1], P2[2] - P1[2]]; let N = [P2[0] + P1[0], P2[1] + P1[1], P2[2] + P1[2]];
+    const B = nrm(cross(T, N)); N = nrm(cross(B, T));
+    for (let j = 0; j < R; j++) {
+      const v = j / R * 2 * Math.PI, cx = -Math.cos(v), cy = Math.sin(v), o = (i * R + j) * 3;
+      const d = [cx * N[0] + cy * B[0], cx * N[1] + cy * B[1], cx * N[2] + cy * B[2]];
+      pos.set([P1[0] + tube * d[0], P1[1] + tube * d[1], P1[2] + tube * d[2]], o); nr.set(d, o);
+      const a = i * R + j, b = ((i + 1) % S) * R + j, c = ((i + 1) % S) * R + (j + 1) % R, e = i * R + (j + 1) % R;
+      idx.set([a, b, e, b, c, e], (i * R + j) * 6);
+    }
+  }
+  fixWinding(pos, idx, nr);
+  return { pos, idx, nrm: nr };
+}
+function prepare(m) {       // per-triangle data the builder needs
+  const { pos, idx } = m, nT = idx.length / 3, nV = pos.length / 3;
+  m.tn = new Float32Array(nT * 3); m.tc = new Float32Array(nT * 3);
+  const deg = new Uint32Array(nV + 1); let edge = 0;
+  for (let t = 0; t < nT; t++) {
+    const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, c = idx[t * 3 + 2] * 3;
+    const n = nrm(cross([pos[b] - pos[a], pos[b + 1] - pos[a + 1], pos[b + 2] - pos[a + 2]], [pos[c] - pos[a], pos[c + 1] - pos[a + 1], pos[c + 2] - pos[a + 2]]));
+    m.tn.set(n, t * 3); m.tc.set([(pos[a] + pos[b] + pos[c]) / 3, (pos[a + 1] + pos[b + 1] + pos[c + 1]) / 3, (pos[a + 2] + pos[b + 2] + pos[c + 2]) / 3], t * 3);
+    edge += Math.hypot(pos[b] - pos[a], pos[b + 1] - pos[a + 1], pos[b + 2] - pos[a + 2]);
+    deg[idx[t * 3] + 1]++; deg[idx[t * 3 + 1] + 1]++; deg[idx[t * 3 + 2] + 1]++;
+  }
+  m.edge = edge / nT;
+  for (let v = 0; v < nV; v++) deg[v + 1] += deg[v];
+  m.vStart = deg; m.vTris = new Uint32Array(nT * 3); const fill = deg.slice(0, nV);
+  for (let t = 0; t < nT; t++) for (let k = 0; k < 3; k++) m.vTris[fill[idx[t * 3 + k]]++] = t;
+  return m;
+}
+const MESHES = [
+  { radius: 1.3, lods: [makeRock(4), makeRock(3), makeRock(2)].map(prepare) },
+  { radius: 1.8, lods: [makeKnot(256, 16), makeKnot(128, 10), makeKnot(64, 6)].map(prepare) }
+];
+
+// ============ the meshlet builder (in a real engine: an offline tool such as meshoptimizer) ============
+function buildMeshlets(m, maxV, maxT, greedy, G) {
+  const { pos, idx, tn, tc } = m, nT = idx.length / 3, local = new Int16Array(pos.length / 3).fill(-1);
+  let verts = [], ltris = [], tids = [];
+  const start = G.desc.length / 4;
+  const add = t => { for (let k = 0; k < 3; k++) { const v = idx[t * 3 + k]; if (local[v] < 0) { local[v] = verts.length; verts.push(v); } ltris.push(local[v]); } tids.push(t); };
+  const flush = () => {
+    if (!tids.length) return;
+    let cx = 0, cy = 0, cz = 0; for (const v of verts) { cx += pos[v * 3]; cy += pos[v * 3 + 1]; cz += pos[v * 3 + 2]; }
+    cx /= verts.length; cy /= verts.length; cz /= verts.length;
+    let r2 = 0; for (const v of verts) { const dx = pos[v * 3] - cx, dy = pos[v * 3 + 1] - cy, dz = pos[v * 3 + 2] - cz; r2 = Math.max(r2, dx * dx + dy * dy + dz * dz); }
+    // normal cone: the average normal, and how far the worst triangle strays from it
+    let ax = 0, ay = 0, az = 0; for (const t of tids) { ax += tn[t * 3]; ay += tn[t * 3 + 1]; az += tn[t * 3 + 2]; }
+    let l = Math.hypot(ax, ay, az); if (l < 1e-6) { ax = 0; ay = 1; az = 0; l = 1; } ax /= l; ay /= l; az /= l;
+    let mind = 1; for (const t of tids) mind = Math.min(mind, ax * tn[t * 3] + ay * tn[t * 3 + 1] + az * tn[t * 3 + 2]);
+    const cutoff = mind <= 0.1 ? 1 : Math.sqrt(1 - mind * mind);       // 1 means: too wide, never cull
+    G.desc.push(G.mverts.length, G.mtris.length / 4, verts.length, tids.length);
+    for (const v of verts) G.mverts.push(m.vbase + v);
+    for (let i = 0; i < ltris.length; i += 3) G.mtris.push(ltris[i], ltris[i + 1], ltris[i + 2], 0);
+    G.bound.push(cx, cy, cz, Math.sqrt(r2)); G.cone.push(ax, ay, az, cutoff);
+    for (const v of verts) local[v] = -1; verts = []; ltris = []; tids = [];
+  };
+  if (!greedy) {
+    for (let t = 0; t < nT; t++) {
+      let nv = 0; for (let k = 0; k < 3; k++) if (local[idx[t * 3 + k]] < 0) nv++;
+      if (verts.length + nv > maxV || tids.length >= maxT) flush();
+      add(t);
+    }
+    flush();
+  } else {
+    const used = new Uint8Array(nT), mark = new Int32Array(nT), vS = m.vStart, vT = m.vTris, scale = 1 / (m.edge * Math.sqrt(maxT) * 0.6);
+    let stamp = 0, left = nT, ptr = 0, seed = -1;
+    while (left > 0) {
+      if (seed < 0) { while (used[ptr]) ptr++; seed = ptr; }
+      used[seed] = 1; left--; add(seed);
+      let sx = tc[seed * 3], sy = tc[seed * 3 + 1], sz = tc[seed * 3 + 2], nx = tn[seed * 3], ny = tn[seed * 3 + 1], nz = tn[seed * 3 + 2];
+      while (tids.length < maxT) {
+        const n = tids.length, mx = sx / n, my = sy / n, mz = sz / n, nl = Math.hypot(nx, ny, nz) || 1;
+        let best = -1, bs = 1e9; stamp++;
+        for (let i = 0; i < verts.length; i++) {
+          const v = verts[i];
+          for (let j = vS[v]; j < vS[v + 1]; j++) {
+            const t = vT[j]; if (used[t] || mark[t] === stamp) continue; mark[t] = stamp;
+            let nv = 0; for (let k = 0; k < 3; k++) if (local[idx[t * 3 + k]] < 0) nv++;
+            if (verts.length + nv > maxV) continue;
+            const dx = tc[t * 3] - mx, dy = tc[t * 3 + 1] - my, dz = tc[t * 3 + 2] - mz;
+            // fewer new vertices, closer to the center, facing the same way: lower is better
+            const s = nv + Math.sqrt(dx * dx + dy * dy + dz * dz) * scale + (1 - (tn[t * 3] * nx + tn[t * 3 + 1] * ny + tn[t * 3 + 2] * nz) / nl) * 1.2;
+            if (s < bs) { bs = s; best = t; }
+          }
+        }
+        if (best < 0) break;
+        used[best] = 1; left--; add(best);
+        sx += tc[best * 3]; sy += tc[best * 3 + 1]; sz += tc[best * 3 + 2]; nx += tn[best * 3]; ny += tn[best * 3 + 1]; nz += tn[best * 3 + 2];
+      }
+      // start the next meshlet next to this one, at the most enclosed free triangle (avoids leaving small holes)
+      seed = -1; let bn = 1e9; stamp++;
+      for (let i = 0; i < verts.length; i++) {
+        const v = verts[i];
+        for (let j = vS[v]; j < vS[v + 1]; j++) {
+          const t = vT[j]; if (used[t] || mark[t] === stamp) continue; mark[t] = stamp;
+          let c = 0; for (let k = 0; k < 3; k++) { const w = idx[t * 3 + k]; for (let q = vS[w]; q < vS[w + 1]; q++) if (!used[vT[q]]) c++; }
+          if (c < bn) { bn = c; seed = t; }
+        }
+      }
+      flush();
+    }
+  }
+  m.mStart = start; m.mCount = G.desc.length / 4 - start; m.triCount = nT;
+}
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: true, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+const COMMON = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D; precision highp usampler2D;
+layout(location=0) in vec4 aTask;      // meshlet index, object index, cull state, level of detail
+uniform sampler2D uDesc, uMVerts, uPos, uNrm, uInst, uBound, uCone; uniform usampler2D uMTris;
+uniform mat4 uVP;
+ivec2 at(int i){ return ivec2(i % 1024, i / 1024); }
+vec4 I0, I1;
+void loadInst(){ I0 = texelFetch(uInst, ivec2(0, int(aTask.y)), 0); I1 = texelFetch(uInst, ivec2(1, int(aTask.y)), 0); }
+vec3 rot(vec3 v){ return vec3(I1.x * v.x + I1.y * v.z, v.y, -I1.y * v.x + I1.x * v.z); }
+`;
+// The mesh shader's job, done by a vertex shader. One instance = one meshlet. gl_VertexID walks its triangle list.
+const prog = program(COMMON + `
+uniform int uColor;
+out vec3 vW; out vec3 vN; out vec3 vBary; flat out vec3 vCol;
+vec3 hue(float x){ return 0.35 + 0.65 * fract(x * vec3(0.713, 0.371, 0.529) + vec3(0.1, 0.4, 0.7)); }
+void main(){
+  int mi = int(aTask.x), tri = gl_VertexID / 3, corner = gl_VertexID % 3;
+  vec4 d = texelFetch(uDesc, at(mi), 0);                       // vertexOffset, triangleOffset, vertexCount, triangleCount
+  vW = vec3(0.0); vN = vec3(0.0, 1.0, 0.0); vBary = vec3(0.0); vCol = vec3(0.0);
+  if (tri >= int(d.w)) { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); return; }   // past the end of this meshlet: emit nothing
+  uint li = texelFetch(uMTris, at(int(d.y) + tri), 0)[corner]; // local index, 0..vertexCount-1
+  int vi = int(texelFetch(uMVerts, at(int(d.x) + int(li)), 0).r);   // index into the vertex buffer
+  loadInst();
+  vec3 p = rot(texelFetch(uPos, at(vi), 0).xyz) * I0.w + I0.xyz;
+  vN = rot(texelFetch(uNrm, at(vi), 0).xyz); vW = p; vBary = vec3(corner == 0, corner == 1, corner == 2);
+  float id = float(mi) + aTask.y * 13.0 + 1.0;
+  if (uColor == 0) vCol = I1.z < 0.5 ? vec3(0.60, 0.55, 0.50) : vec3(0.25, 0.55, 0.60);
+  else if (uColor == 1) vCol = hue(id);
+  else if (uColor == 2) vCol = hue(id * 7.0 + float(tri));     // a per-triangle output
+  else if (uColor == 3) { float w = texelFetch(uCone, at(mi), 0).w; vCol = w > 0.999 ? vec3(0.75, 0.20, 0.55) : mix(vec3(0.24, 0.75, 0.41), vec3(0.95, 0.80, 0.25), w); }
+  else if (uColor == 4) vCol = aTask.w < 0.5 ? vec3(0.90, 0.35, 0.30) : (aTask.w < 1.5 ? vec3(0.95, 0.80, 0.30) : vec3(0.30, 0.75, 0.50));
+  else vCol = aTask.z < 0.5 ? hue(id) : (aTask.z < 1.5 ? vec3(0.165, 0.19, 0.25) : vec3(0.50, 0.125, 0.12));
+  gl_Position = uVP * vec4(p, 1.0);
+}`, `#version 300 es
+precision highp float; precision highp int;
+in vec3 vW; in vec3 vN; in vec3 vBary; flat in vec3 vCol;
+uniform int uWire;
+out vec4 o;
+void main(){
+  float lit = 0.30 + 0.70 * max(dot(normalize(vN), normalize(vec3(0.45, 0.8, 0.35))), 0.0);
+  vec3 col = pow(vCol * lit, vec3(1.0 / 2.2));
+  if (uWire == 1) { float e = min(vBary.x, min(vBary.y, vBary.z)), w = fwidth(e); col = mix(col, vec3(0.03, 0.04, 0.05), (1.0 - smoothstep(w * 0.4, w * 1.1, e)) * 0.6); }
+  o = vec4(col, 1.0);
+}`);
+// per-meshlet debug lines: the cone axis, or the bounding sphere as a camera-facing circle
+const boundProg = program(COMMON + `
+uniform int uMode; uniform vec3 uRight, uUp;
+out vec4 vC;
+void main(){
+  int mi = int(aTask.x); loadInst();
+  vec4 b = texelFetch(uBound, at(mi), 0), cn = texelFetch(uCone, at(mi), 0);
+  vec3 c = rot(b.xyz) * I0.w + I0.xyz, p; float r = b.w * I0.w;
+  if (uMode == 0) { p = c + rot(cn.xyz) * r * 1.3 * float(gl_VertexID) * (cn.w > 0.999 ? 0.0 : 1.0); vC = vec4(1.0, 1.0, 1.0, 0.9); }
+  else { float a = float(gl_VertexID / 2 + gl_VertexID % 2) / 24.0 * 6.2831853; p = c + (uRight * cos(a) + uUp * sin(a)) * r; vC = vec4(1.0, 1.0, 1.0, aTask.z < 0.5 ? 0.45 : 0.12); }
+  gl_Position = uVP * vec4(p, 1.0);
+}`, `#version 300 es
+precision mediump float; in vec4 vC; out vec4 o; void main(){ o = vC; }`);
+const lineProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; uniform mat4 uVP; void main(){ gl_Position = uVP * vec4(aPos, 1.0); }`, `#version 300 es
+precision mediump float; uniform vec4 uCol; out vec4 o; void main(){ o = uCol; }`);
+const blitProg = program(`#version 300 es
+uniform vec4 uRect; out vec2 vUV;
+void main(){ vec2 q = vec2(gl_VertexID & 1, gl_VertexID >> 1); vUV = uRect.xy + q * uRect.zw; gl_Position = vec4(q * 2.0 - 1.0, 0.0, 1.0); }`, `#version 300 es
+precision mediump float; uniform sampler2D uTex; in vec2 vUV; out vec4 o; void main(){ o = texture(uTex, vUV); }`);
+
+// ---------- data textures: the buffers a mesh shader would read ----------
+const UNIT = { uDesc: 0, uMVerts: 1, uMTris: 2, uPos: 3, uNrm: 4, uInst: 5, uBound: 6, uCone: 7 };
+const tex = {};
+for (const k in UNIT) { tex[k] = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + UNIT[k]); gl.bindTexture(gl.TEXTURE_2D, tex[k]); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); }
+function upload(name, internal, format, type, arr, comps, Arr, width) {
+  const w = width || 1024, h = Math.max(1, Math.ceil(arr.length / comps / w)), data = new Arr(w * h * comps); data.set(arr);
+  gl.activeTexture(gl.TEXTURE0 + UNIT[name]); gl.bindTexture(gl.TEXTURE_2D, tex[name]); gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, data);
+}
+{ // one shared vertex buffer for every mesh and level of detail
+  let n = 0; for (const M of MESHES) for (const m of M.lods) { m.vbase = n; n += m.pos.length / 3; }
+  const P = new Float32Array(n * 4), N = new Float32Array(n * 4);
+  for (const M of MESHES) for (const m of M.lods) for (let v = 0; v < m.pos.length / 3; v++) { P.set(m.pos.subarray(v * 3, v * 3 + 3), (m.vbase + v) * 4); N.set(m.nrm.subarray(v * 3, v * 3 + 3), (m.vbase + v) * 4); }
+  upload("uPos", gl.RGBA32F, gl.RGBA, gl.FLOAT, P, 4, Float32Array); upload("uNrm", gl.RGBA32F, gl.RGBA, gl.FLOAT, N, 4, Float32Array);
+}
+let Gd, Gb, Gc, maxTris = 1, buildMs = 0, fillV = 0, fillT = 0, coneOk = 0, lod0Meshlets = 0;
+function rebuild() {
+  const t0 = performance.now(), G = { desc: [], mverts: [], mtris: [], bound: [], cone: [] };
+  for (const M of MESHES) for (const m of M.lods) buildMeshlets(m, state.maxV, state.maxT, state.builder === 1, G);
+  buildMs = performance.now() - t0;
+  Gd = Float32Array.from(G.desc); Gb = Float32Array.from(G.bound); Gc = Float32Array.from(G.cone);
+  upload("uDesc", gl.RGBA32F, gl.RGBA, gl.FLOAT, Gd, 4, Float32Array); upload("uBound", gl.RGBA32F, gl.RGBA, gl.FLOAT, Gb, 4, Float32Array); upload("uCone", gl.RGBA32F, gl.RGBA, gl.FLOAT, Gc, 4, Float32Array);
+  upload("uMVerts", gl.R32F, gl.RED, gl.FLOAT, G.mverts, 1, Float32Array); upload("uMTris", gl.RGBA8UI, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, G.mtris, 4, Uint8Array);
+  maxTris = 1; let sv = 0, st = 0, ok = 0, n = 0;
+  for (const M of MESHES) { const m = M.lods[0]; for (let i = m.mStart; i < m.mStart + m.mCount; i++) { sv += Gd[i * 4 + 2]; st += Gd[i * 4 + 3]; if (Gc[i * 4 + 3] < 1) ok++; n++; } }
+  for (let i = 0; i < Gd.length; i += 4) maxTris = Math.max(maxTris, Gd[i + 3]);
+  fillV = sv / n; fillT = st / n; coneOk = ok / n; lod0Meshlets = n;
+}
+
+// ---------- scene: objects are instances of the two meshes ----------
+let instances = [];
+const camM = { yaw: 0.6, pitch: 0.2, dist: 16, tgt: [0, 1.4, 0] }, camO = { yaw: 0.9, pitch: 0.8, dist: 78, tgt: [0, 0, 0] };
+const FOV = 0.9, NEAR = 0.3, FAR = 70;
+function buildScene() {
+  instances = [];
+  if (state.scene < 2) {
+    instances.push({ type: state.scene === 0 ? 1 : 0, x: 0, y: 0, z: 0, s: 1.6, a: 0 });
+    Object.assign(camM, { yaw: 0.6, pitch: 0.25, dist: 8, tgt: [0, 0, 0] }); Object.assign(camO, { yaw: 2.2, pitch: 0.45, dist: 17, tgt: [0, 0, 0] });
+  } else {
+    for (let gz = 0; gz < 8; gz++) for (let gx = 0; gx < 8; gx++) {
+      const r = k => h3(gx * 7 + k, gz * 13 + 5, 91), s = 0.8 + 0.8 * r(1);
+      instances.push({ type: r(2) < 0.5 ? 0 : 1, x: (gx - 3.5) * 6.5 + (r(3) - 0.5) * 2.4, y: s * 0.95, z: (gz - 3.5) * 6.5 + (r(4) - 0.5) * 2.4, s, a: r(5) * 6.283 });
+    }
+    Object.assign(camM, { yaw: 0.6, pitch: 0.2, dist: 16, tgt: [0, 1.4, 0] }); Object.assign(camO, { yaw: 0.9, pitch: 0.8, dist: 78, tgt: [0, 0, 0] });
+  }
+  const D = new Float32Array(instances.length * 8);
+  instances.forEach((I, i) => { I.c = Math.cos(I.a); I.sn = Math.sin(I.a); D.set([I.x, I.y, I.z, I.s, I.c, I.sn, I.type, 0], i * 8); });
+  upload("uInst", gl.RGBA32F, gl.RGBA, gl.FLOAT, D, 4, Float32Array, 2);
+}
+
+// ============ the task shader's job, done in JavaScript: test every meshlet, keep the survivors ============
+let visArr = new Float32Array(4 * 4096), cullArr = new Float32Array(4 * 4096), nVis = 0, nCull = 0, taskMs = 0;
+const S = { total: 0, fr: 0, co: 0, triFull: 0, triLod: 0, triDrawn: 0, vertsDrawn: 0 };
+function runTasks(eye, P, projScale) {
+  const t0 = performance.now(); nVis = 0; nCull = 0; S.total = S.fr = S.co = S.triFull = S.triLod = S.triDrawn = S.vertsDrawn = 0;
+  for (let ii = 0; ii < instances.length; ii++) {
+    const I = instances[ii], M = MESHES[I.type];
+    // level of detail: one decision per object, from its size on screen
+    let lod = 0;
+    if (state.lod) { const px = M.radius * I.s * projScale / Math.max(Math.hypot(I.x - eye[0], I.y - eye[1], I.z - eye[2]), 1e-3); lod = px > state.lodPx ? 0 : px > state.lodPx * 0.4 ? 1 : 2; }
+    const L = M.lods[lod]; S.triFull += M.lods[0].triCount; S.triLod += L.triCount; S.total += L.mCount;
+    if ((nVis + nCull + L.mCount) * 4 > visArr.length) { const a = new Float32Array(visArr.length * 2), b = new Float32Array(visArr.length * 2); a.set(visArr); b.set(cullArr); visArr = a; cullArr = b; }
+    for (let mi = L.mStart; mi < L.mStart + L.mCount; mi++) {
+      const o = mi * 4, bx = Gb[o], bz = Gb[o + 2], r = Gb[o + 3] * I.s;
+      const wx = (I.c * bx + I.sn * bz) * I.s + I.x, wy = Gb[o + 1] * I.s + I.y, wz = (-I.sn * bx + I.c * bz) * I.s + I.z;
+      let st = 0;
+      if (state.frustum) for (let p = 0; p < 24; p += 4) if (P[p] * wx + P[p + 1] * wy + P[p + 2] * wz + P[p + 3] < -r) { st = 1; break; }
+      if (!st && state.cone && Gc[o + 3] < 1) {
+        const ax = I.c * Gc[o] + I.sn * Gc[o + 2], ay = Gc[o + 1], az = -I.sn * Gc[o] + I.c * Gc[o + 2], dx = wx - eye[0], dy = wy - eye[1], dz = wz - eye[2];
+        if (dx * ax + dy * ay + dz * az >= Gc[o + 3] * Math.hypot(dx, dy, dz) + r) st = 2;
+      }
+      if (st) { cullArr.set([mi, ii, st, lod], nCull++ * 4); if (st === 1) S.fr++; else S.co++; }
+      else { visArr.set([mi, ii, 0, lod], nVis++ * 4); S.triDrawn += Gd[o + 3]; S.vertsDrawn += Gd[o + 2]; }
+    }
+  }
+  taskMs = performance.now() - t0;
+}
+function planesFrom(m) {
+  const P = new Float32Array(24), row = i => [m[i], m[4 + i], m[8 + i], m[12 + i]], r3 = row(3);
+  [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1], [2, -1]].forEach(([i, sg], k) => { const a = row(i), x = r3[0] + sg * a[0], y = r3[1] + sg * a[1], z = r3[2] + sg * a[2], l = Math.hypot(x, y, z); P.set([x / l, y / l, z / l, (r3[3] + sg * a[3]) / l], k * 4); });
+  return P;
+}
+
+// ---------- buffers ----------
+function taskVao() { const vao = gl.createVertexArray(), buf = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(0, 1); gl.bindVertexArray(null); return { vao, buf }; }
+const vis = taskVao(), cul = taskVao(), emptyVao = gl.createVertexArray();
+function lineVao(data, usage) { const vao = gl.createVertexArray(), buf = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, usage); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null); return { vao, buf, n: data.length / 3 }; }
+const grid = (() => { const L = []; for (let i = -5; i <= 5; i++) { const v = i * 6.5; L.push(v, 0, -32.5, v, 0, 32.5, -32.5, 0, v, 32.5, 0, v); } return lineVao(new Float32Array(L), gl.STATIC_DRAW); })();
+const frus = lineVao(new Float32Array(32 * 3), gl.DYNAMIC_DRAW);
+function updateFrustum(eye, tgt, aspect) {
+  const f = nrm([tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]]), r = nrm(cross(f, [0, 1, 0])), u = cross(r, f), th = Math.tan(FOV / 2), C = [];
+  for (const d of [NEAR, FAR]) for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) C.push([0, 1, 2].map(k => eye[k] + f[k] * d + r[k] * sx * d * th * aspect + u[k] * sy * d * th));
+  const L = []; for (let i = 0; i < 4; i++) L.push(...C[i], ...C[(i + 1) % 4], ...C[4 + i], ...C[4 + (i + 1) % 4], ...C[i], ...C[4 + i], ...eye, ...C[i]);
+  gl.bindBuffer(gl.ARRAY_BUFFER, frus.buf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(L));
+}
+// thumbnails are drawn into an off-screen strip, one per frame, then copied to the canvas
+const atlas = { fbo: gl.createFramebuffer(), tex: gl.createTexture(), depth: gl.createRenderbuffer(), cw: 0, ch: 0 };
+function atlasSize(cw, ch) {
+  if (cw === atlas.cw && ch === atlas.ch) return; atlas.cw = cw; atlas.ch = ch;
+  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, atlas.tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cw * thumbs.length, ch, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindRenderbuffer(gl.RENDERBUFFER, atlas.depth); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, cw * thumbs.length, ch);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, atlas.fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, atlas.tex, 0); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, atlas.depth);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); fullRefresh = true;
+}
+
+// ---------- layout + cameras ----------
+let W = 0, H = 0, rectsDirty = true;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (w !== W || h !== H) { W = w; H = h; canvas.width = w; canvas.height = h; stripEl.style.setProperty("--ar", (w / h).toFixed(3)); rectsDirty = true; touch(); }
+  if (rectsDirty) {
+    rectsDirty = false;
+    const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height; let cw = 4, ch = 4;
+    for (const t of thumbs) { const r = t.el.getBoundingClientRect(); t.rect = [Math.round((r.left - cr.left + 1) * sx), Math.round((cr.bottom - r.bottom + 1) * sy), Math.round((r.width - 2) * sx), Math.round((r.height - 2) * sy)]; cw = Math.max(cw, t.rect[2]); ch = Math.max(ch, t.rect[3]); }
+    atlasSize(cw, ch);
+  }
+}
+window.addEventListener("resize", () => { rectsDirty = true; touch(); });
+let drag = null; const pointers = new Map();
+const activeCam = () => isObs(state.view) ? camO : camM;
+const zoomTo = (c, d) => { c.dist = c === camO ? Math.min(220, Math.max(6, d)) : Math.min(45, Math.max(2.5, d)); };
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); if (!pointers.size) drag = null; });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return; dirty = true; const c = activeCam();
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [p, q] = [...pointers.values()]; const d1 = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d0 > 0 && d1 > 0) zoomTo(c, c.dist * d0 / d1);
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  c.yaw += dx * 0.006; c.pitch = Math.max(c === camO ? 0.05 : -1.2, Math.min(1.5, c.pitch + dy * 0.006));
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); const c = activeCam(); zoomTo(c, c.dist * Math.exp(e.deltaY * 0.001)); dirty = true; }, { passive: false });
+const eyeOf = c => [c.tgt[0] + c.dist * Math.cos(c.pitch) * Math.cos(c.yaw), c.tgt[1] + c.dist * Math.sin(c.pitch), c.tgt[2] + c.dist * Math.cos(c.pitch) * Math.sin(c.yaw)];
+
+// ---------- drawing ----------
+const COLOR_OF = [0, 2, 1, 3, 5, 4];
+function drawScene(view, w, h, small, C) {
+  const obs = isObs(view), eye = obs ? C.eyeO : C.eyeM, viewM = obs ? C.viewO : C.viewM;
+  const vp = mul4(obs ? persp(0.8, w / h, 0.5, 600) : persp(FOV, w / h, NEAR, FAR), viewM);
+  gl.clearColor(0.05, 0.06, 0.08, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (state.scene === 2) { gl.useProgram(lineProg.p); gl.uniformMatrix4fv(lineProg.u.uVP, false, vp); gl.uniform4f(lineProg.u.uCol, 0.17, 0.19, 0.24, 1); gl.bindVertexArray(grid.vao); gl.drawArrays(gl.LINES, 0, grid.n); }
+  gl.useProgram(prog.p); gl.uniformMatrix4fv(prog.u.uVP, false, vp); gl.uniform1i(prog.u.uColor, COLOR_OF[view]);
+  gl.uniform1i(prog.u.uWire, small ? 0 : (view === 1 || (view === 0 && state.wire) ? 1 : 0));
+  // one instance per surviving meshlet; the shader ignores vertices past the meshlet's own triangle count
+  gl.bindVertexArray(vis.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, maxTris * 3, nVis);
+  if (obs) { gl.bindVertexArray(cul.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, maxTris * 3, nCull); }   // culled meshlets, shown only so you can see them
+  if (obs && !small && (view === 3 || state.spheres)) {
+    gl.useProgram(boundProg.p); gl.uniformMatrix4fv(boundProg.u.uVP, false, vp);
+    gl.uniform3f(boundProg.u.uRight, viewM[0], viewM[4], viewM[8]); gl.uniform3f(boundProg.u.uUp, viewM[1], viewM[5], viewM[9]);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    for (const [T, n] of [[vis, nVis], [cul, nCull]]) {
+      gl.bindVertexArray(T.vao);
+      if (view === 3) { gl.uniform1i(boundProg.u.uMode, 0); gl.drawArraysInstanced(gl.LINES, 0, 2, n); }
+      if (state.spheres) { gl.uniform1i(boundProg.u.uMode, 1); gl.drawArraysInstanced(gl.LINES, 0, 48, n); }
+    }
+    gl.disable(gl.BLEND);
+  }
+  if (obs) { gl.useProgram(lineProg.p); gl.uniformMatrix4fv(lineProg.u.uVP, false, vp); gl.uniform4f(lineProg.u.uCol, 1, 0.78, 0.3, 1); gl.bindVertexArray(frus.vao); gl.drawArrays(gl.LINES, 0, 32); }
+}
+const pct = (a, b) => b ? " (" + Math.round(100 * a / b) + "%)" : "", num = n => Math.round(n).toLocaleString("en-US");
+function showStats() {
+  $("sInst").textContent = String(instances.length); $("sMl").textContent = num(S.total);
+  $("sFr").textContent = num(S.fr) + pct(S.fr, S.total); $("sCo").textContent = num(S.co) + pct(S.co, S.total); $("sDr").textContent = num(nVis) + pct(nVis, S.total);
+  $("sTri").textContent = `${num(S.triFull)} → ${num(S.triLod)} → ${num(S.triDrawn)}`;
+  $("sFill").textContent = `${fillV.toFixed(1)}/${state.maxV} vertices, ${fillT.toFixed(1)}/${state.maxT} triangles`;
+  $("sCone").textContent = Math.round(coneOk * 100) + "% of " + lod0Meshlets;
+  $("sVs").textContent = `${num(S.vertsDrawn)} / ${num(nVis * maxTris * 3)}`;
+  $("sBuild").textContent = buildMs.toFixed(0) + " ms"; $("sTask").textContent = taskMs.toFixed(2) + " ms";
+  $("hudM").innerHTML = `<b>${num(S.total)}</b> meshlets → <b>${num(nVis)}</b> drawn`; $("hudT").innerHTML = `<b>${num(S.triDrawn)}</b> of ${num(S.triFull)} triangles`;
+}
+let last = performance.now(), frameN = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (state.auto && !(drag && !isObs(state.view))) { camM.yaw += dt * 0.22; dirty = true; }
+  resize();
+  if (!dirty && settle <= 0) return;
+  if (dirty) settle = thumbs.length; else settle--;
+  dirty = false; frameN++;
+  if (rebuildNeeded) { rebuildNeeded = false; rebuild(); syncUI(); fullRefresh = true; }
+  const C = { eyeM: eyeOf(camM), eyeO: eyeOf(camO) }; C.viewM = lookAt(C.eyeM, camM.tgt, [0, 1, 0]); C.viewO = lookAt(C.eyeO, camO.tgt, [0, 1, 0]);
+  // culling always uses the main camera, whichever camera you are looking through
+  runTasks(C.eyeM, planesFrom(mul4(persp(FOV, W / H, NEAR, FAR), C.viewM)), canvas.clientHeight / (2 * Math.tan(FOV / 2)));
+  gl.bindBuffer(gl.ARRAY_BUFFER, vis.buf); gl.bufferData(gl.ARRAY_BUFFER, visArr.subarray(0, Math.max(4, nVis * 4)), gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, cul.buf); gl.bufferData(gl.ARRAY_BUFFER, cullArr.subarray(0, Math.max(4, nCull * 4)), gl.DYNAMIC_DRAW);
+  updateFrustum(C.eyeM, camM.tgt, W / H);
+  gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); drawScene(state.view, W, H, false, C);
+  if (state.strip && atlas.cw > 8) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, atlas.fbo); gl.enable(gl.SCISSOR_TEST);
+    thumbs.forEach((t, i) => { if (!fullRefresh && i !== frameN % thumbs.length) return; gl.viewport(i * atlas.cw, 0, atlas.cw, atlas.ch); gl.scissor(i * atlas.cw, 0, atlas.cw, atlas.ch); drawScene(t.v, atlas.cw, atlas.ch, true, C); });
+    gl.disable(gl.SCISSOR_TEST); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.useProgram(blitProg.p); gl.uniform1i(blitProg.u.uTex, 8); gl.bindVertexArray(emptyVao);
+    thumbs.forEach((t, i) => { const [x, y, w, h] = t.rect || [0, 0, 0, 0]; if (w < 5 || h < 5) return; gl.viewport(x, y, w, h); gl.uniform4f(blitProg.u.uRect, i / thumbs.length, 0, 1 / thumbs.length, 1); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); });
+  }
+  if (fullRefresh || frameN % 8 === 0) showStats();
+  fullRefresh = false;
+}
+try {
+  for (const P of [prog, boundProg]) { gl.useProgram(P.p); for (const k in UNIT) if (P.u[k]) gl.uniform1i(P.u[k], UNIT[k]); }
+  buildScene(); syncUI(); setView(4); resize(); requestAnimationFrame(frame);
+} catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

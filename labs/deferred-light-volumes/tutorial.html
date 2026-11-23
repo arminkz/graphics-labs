@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deferred light volumes: a walkthrough of the lab</title>
+<script>if (window.self !== window.top) document.documentElement.classList.add("in-panel");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tutorial.css">
+</head>
+<body>
+<nav class="page-nav"><a href="index.html#tutorial">Open the lab with this tutorial</a><a href="../../index.html#deferred-light-volumes">All labs</a></nav>
+<main class="tutorial">
+<h1>Deferred light volumes: a walkthrough of the lab</h1>
+<p>Each step says what to look at in the lab. The thumbnails under the scene are numbered 1 to 8, and clicking one shows that stage full size.</p>
+<h2>The one idea</h2>
+<p>Deferred shading splits rendering into two parts:</p>
+<ol>
+<li><strong>Geometry pass:</strong> draw the scene once and store, for every pixel, what the surface is: its color, its normal and its position. That set of images is the <strong>G-buffer</strong>.</li>
+<li><strong>Lighting pass:</strong> for each light, read the G-buffer and add that light's contribution.</li>
+</ol>
+<p>The question this lab answers is the second part's cost. A small light only reaches a few pixels. If every light runs its shader on every pixel, most of that work produces zero. A <strong>light volume</strong> is the fix: draw a shape that encloses the light's reach, and run the lighting shader only where that shape is on screen.</p>
+<h2>Step 1: Fill the G-buffer (thumbnails 1, 2 and 3)</h2>
+<p>The scene is drawn once into three textures plus the depth buffer:</p>
+<pre><code class="language-glsl">oAlbedo = vec4(color, 1.0);               // surface color
+oNormal = vec4(normalize(vNorV), 1.0);    // normal, in view space
+oPos    = vec4(vPosV, 1.0);               // position, in view space
+</code></pre>
+<p>No lighting happens here. The alpha of <code>oPos</code> is 1 where there is geometry and 0 on the empty background, which lets later passes skip the background.</p>
+<p><em>Try it:</em> click thumbnails <strong>1</strong>, <strong>2</strong> and <strong>3</strong> to see the albedo, the normals and the depth.</p>
+<h2>Step 2: Add the lights, one at a time (thumbnail 7)</h2>
+<p>The lighting pass draws into a separate light buffer with additive blending, so each light adds on top of the others:</p>
+<pre><code class="language-js">gl.depthMask(false);                 // lights must not change the scene's depth
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.ONE, gl.ONE);        // result = what is there + this light
+</code></pre>
+<p>The shader for one light reads the G-buffer at its own pixel and does ordinary lighting math:</p>
+<pre><code class="language-glsl">vec4 P = texelFetch(uPos, p, 0);
+if (P.a &lt; 0.5) return;                       // background: nothing to light
+vec3 L = uLightV - P.xyz; float d = length(L);
+if (d &gt;= uRadius) return;                    // out of this light's reach
+// diffuse + specular, then fade to exactly zero at the radius
+float x = d / uRadius, win = clamp(1.0 - x*x*x*x, 0.0, 1.0); win *= win;
+float att = win / (1.0 + d * d);
+oLight = vec4(uLightColor * (albedo + spec) * ndl * att * uIntensity, 0.0);
+</code></pre>
+<p>The <code>win</code> term matters: it forces the light to zero at <code>uRadius</code>. Without a hard limit, there would be no finite volume to draw.</p>
+<p>The two early <code>return</code> lines are the wasted work. The shader ran, found nothing to do, and wrote zero. The rest of the lab is about not running it at all for those pixels.</p>
+<h2>Step 3: Mode 1, a full-screen quad per light (the baseline)</h2>
+<p>Each light draws a quad that covers the whole screen. Every pixel runs every light's shader.</p>
+<p>Cost = pixels × lights. With 64 lights, that is 64 full-screen passes.</p>
+<p><em>Try it:</em> set <strong>View</strong> to <strong>Cost heatmap</strong> and pick mode 1. The whole image is the same hot color. Read <strong>Light shader runs</strong> in the Measured list.</p>
+<h2>Step 4: Mode 2, draw a sphere (front faces)</h2>
+<p>Draw the light as a sphere mesh with the light's radius. The rasterizer now only produces pixels inside the sphere's outline on screen, so the shader runs only there.</p>
+<pre><code class="language-glsl">vec3 w = uLightW + aPos * uRadius * 1.04;   // unit sphere, scaled and moved to the light
+</code></pre>
+<p>The 1.04 is there because the mesh is made of flat triangles. It has to be slightly larger so that it fully contains the true sphere.</p>
+<p>This mode has a bug. Press <strong>Put camera inside light #1</strong> and the light disappears. From inside the sphere, the front faces are behind the camera, and the only faces you could see are back faces, which this mode culls.</p>
+<h2>Step 5: Mode 3, draw the back faces</h2>
+<p>Cull the front faces and draw the back faces instead:</p>
+<pre><code class="language-js">gl.cullFace(gl.FRONT);
+gl.disable(gl.DEPTH_TEST);
+</code></pre>
+<p>The far side of the sphere is in front of the camera whether the camera is outside or inside, so the light always draws.</p>
+<p>The footprint is still only a 2D outline, though. Turn on <strong>Solo</strong>, set <strong>Volumes</strong> to x-ray and <strong>View</strong> to <strong>Useful vs wasted</strong>. Thumbnail <strong>5</strong> splits light #1's footprint into three cases:</p>
+<ul>
+<li><strong>A:</strong> the surface is in front of the sphere, closer to the camera. Not lit.</li>
+<li><strong>B:</strong> the surface is inside the sphere. This is the only case that gets lit.</li>
+<li><strong>C:</strong> the surface is behind the sphere, farther away. Not lit.</li>
+</ul>
+<p>In mode 3, the shader runs for all three.</p>
+<h2>Step 6: Mode 4, back faces with a depth test</h2>
+<p>The G-buffer's depth buffer can reject case C for free. Draw the back faces with the depth test reversed:</p>
+<pre><code class="language-js">gl.cullFace(gl.FRONT);
+gl.enable(gl.DEPTH_TEST);
+gl.depthFunc(gl.GEQUAL);     // pass only if the sphere's far side is behind the scene surface
+</code></pre>
+<p>If the scene surface is farther away than the sphere's far side (case C), the test fails and the hardware discards the pixel before the shader runs.</p>
+<p>So the Z test is not ignored when drawing light spheres. It is used, with the comparison flipped, and with depth writes turned off.</p>
+<p>Case A still gets through: a surface in front of the whole sphere is also in front of its far side.</p>
+<h2>Step 7: Mode 5, the stencil two-pass</h2>
+<p>Two passes per light remove case A as well.</p>
+<p><strong>Pass 1</strong> draws the whole sphere with color writes off and counts depth failures in the stencil buffer:</p>
+<pre><code class="language-js">gl.colorMask(false, false, false, false);
+gl.disable(gl.CULL_FACE);
+gl.depthFunc(gl.LESS);
+gl.stencilOpSeparate(gl.BACK,  gl.KEEP, gl.INCR_WRAP, gl.KEEP);   // back face fails depth: +1
+gl.stencilOpSeparate(gl.FRONT, gl.KEEP, gl.DECR_WRAP, gl.KEEP);   // front face fails depth: -1
+</code></pre>
+<p>Work through the three cases:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Case</th>
+<th>Front face</th>
+<th>Back face</th>
+<th>Stencil</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A: surface in front of the sphere</td>
+<td>fails (−1)</td>
+<td>fails (+1)</td>
+<td>0</td>
+</tr>
+<tr>
+<td>B: surface inside the sphere</td>
+<td>passes</td>
+<td>fails (+1)</td>
+<td>1</td>
+</tr>
+<tr>
+<td>C: surface behind the sphere</td>
+<td>passes</td>
+<td>passes</td>
+<td>0</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Pass 2</strong> draws the sphere again with the lighting shader, only where the stencil is not zero:</p>
+<pre><code class="language-js">gl.stencilFunc(gl.NOTEQUAL, 0, 0xff);
+</code></pre>
+<p>Almost every remaining shader run is useful. The price is an extra draw and a stencil clear per light. Whether that pays off depends on the scene, so compare <strong>GPU time, lighting pass</strong> between modes 4 and 5.</p>
+<h2>Step 8: Combine and tone-map (thumbnail 8)</h2>
+<p>The final pass adds a small constant ambient term and the light buffer, then compresses the result:</p>
+<pre><code class="language-glsl">vec3 c = albedo * 0.03 + light;
+c = c / (1.0 + c);                 // Reinhard tone mapping
+c = pow(c, vec3(1.0 / 2.2));       // to gamma space for the screen
+</code></pre>
+<p>Adding many lights can push values far above 1. That is correct: the light buffer holds physical amounts of light, not screen colors. Tone mapping squeezes the range back into what the screen can show, so bright areas roll off smoothly instead of clipping to white.</p>
+<p>Ambient and directional lights reach every pixel, so they have no useful volume. They are done as one full-screen pass each. In this lab the ambient term is the single <code>albedo * 0.03</code> in the code above.</p>
+<h2>Reading the numbers</h2>
+<ul>
+<li><strong>Light shader runs:</strong> how many times the lighting shader ran this frame, summed over all lights.</li>
+<li><strong>Equivalent full-screen passes:</strong> runs divided by the pixel count. Mode 1 gives the light count.</li>
+<li><strong>Useful / wasted:</strong> a run is useful if the surface was within the light's radius.</li>
+<li><strong>GPU time, lighting pass:</strong> measured on your GPU, when the browser allows timer queries.</li>
+</ul>
+<p><em>Try it:</em> keep <strong>Cost heatmap</strong> on and step through modes 1 to 5. Then raise <strong>Radius</strong>: bigger lights overlap more, and every mode gets more expensive.</p>
+<h2>The whole pipeline in short</h2>
+<p><strong>Once:</strong> draw the scene into the G-buffer.</p>
+<p><strong>For each light:</strong> draw its sphere so the hardware rejects pixels the light cannot reach, run the lighting shader on the rest, and add the result to the light buffer.</p>
+<p><strong>Once:</strong> add ambient, tone-map, and show the image.</p>
+</main>
+</body>
+</html>

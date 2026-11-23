@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Real-time rendering labs</title>
+<meta name="description" content="Interactive WebGL 2 demos of real-time rendering techniques. Each lab draws its intermediate passes next to the final image.">
+<script>document.documentElement.classList.add("js");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/*
+  Landing page for the labs.
+  Narrow or touch screens: a list of labs, each with its screenshot and description.
+  Wide screens with a mouse: the list becomes an index on the left, and a viewer on the
+  right shows the lab under the pointer (or keyboard focus).
+  The accent color is the blue of a flat normal map.
+*/
+:root {
+  --ink: #0e1116;
+  --panel: #151920;
+  --line: #272d39;
+  --text: #e4e7ee;
+  --muted: #8f97a8;
+  --normal: #9292ff;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-padding-top: 24px; }
+body { margin: 0; background: var(--ink); color: var(--text); font: 16px/1.55 var(--body); }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--normal); outline-offset: 3px; border-radius: 2px; }
+
+.page { max-width: 1240px; margin: 0 auto; padding: 44px 28px 40px; }
+.top h1 { font: 600 clamp(34px, 4.6vw, 52px)/1.04 var(--display); letter-spacing: -0.012em; margin: 0; text-wrap: balance; }
+.top p { max-width: 62ch; margin: 12px 0 0; font-size: 17px; color: var(--muted); }
+
+.browser { margin-top: 40px; }
+.index section + section { margin-top: 40px; }
+.index h2 { font: 500 14px/1.3 var(--body); color: var(--muted); margin: 0 0 14px; }
+.index ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 30px 24px; }
+
+.lab { display: block; text-decoration: none; }
+.lab img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.lab-name { display: block; margin-top: 12px; font: 600 23px/1.2 var(--display); }
+.lab-desc { display: block; margin-top: 5px; color: var(--muted); max-width: 60ch; }
+.lab-covers { display: block; margin-top: 6px; font-size: 14px; color: var(--muted); }
+.lab:hover .lab-name { color: var(--normal); }
+
+.viewer { display: none; }
+
+footer { margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+
+@media (min-width: 640px) {
+  .index ul { grid-template-columns: 1fr 1fr; }
+}
+
+/* Index + viewer */
+@media (min-width: 920px) and (hover: hover) {
+  .js .browser { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 56px; align-items: start; }
+  .js .index section + section { margin-top: 18px; }
+  .js .index h2 { margin-bottom: 4px; padding-left: 14px; }
+  .js .index ul { display: block; }
+  .js .lab { padding: 5px 12px 5px 14px; border-left: 2px solid var(--line); }
+  .js .lab img, .js .lab-desc, .js .lab-covers { display: none; }
+  .js .lab-name { margin: 0; font-weight: 500; font-size: 18px; color: var(--muted); }
+  .js .lab:hover .lab-name, .js .lab[data-active] .lab-name { color: var(--text); }
+  .js .lab[data-active] { border-left-color: var(--normal); }
+
+  .js .viewer { display: block; position: sticky; top: 28px; max-width: max(520px, 78vh); }
+  .viewer-shot { display: block; }
+  .viewer-shot img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  .viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 18px; }
+  .viewer h2 { font: 600 28px/1.15 var(--display); margin: 0; }
+  .viewer p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); }
+  .viewer .covers { font-size: 14px; }
+  .viewer-actions { flex: none; display: flex; align-items: center; gap: 18px; }
+  .tut { font-size: 15px; color: var(--muted); text-underline-offset: 3px; }
+  .tut:hover { color: var(--text); }
+  .open { flex: none; padding: 9px 18px; border-radius: 6px; background: var(--normal); color: #0e1116; font-weight: 600; text-decoration: none; }
+  .open:hover { background: #a9a9ff; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <h1>Real-time rendering labs</h1>
+    <p>Interactive WebGL 2 demos of real-time rendering techniques. Each lab draws its intermediate passes next to the final image, so you can see what every step adds.</p>
+  </header>
+
+  <main class="browser">
+    <nav class="index" aria-label="Labs">
+        <section>
+          <h2>Foundations</h2>
+          <ul>
+          <li>
+            <a class="lab" id="coordinate-spaces" href="labs/coordinate-spaces/index.html">
+              <img src="thumbs/coordinate-spaces.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Coordinate spaces</span>
+              <span class="lab-desc">Follow one vertex from object space to the screen: model, view and projection matrices, the perspective divide and the viewport transform.</span>
+              <span class="lab-covers">Covers object, world, view, clip, NDC and screen space.</span>
+            </a>
+          </li>
+          </ul>
+        </section>
+        <section>
+          <h2>Lighting and shadows</h2>
+          <ul>
+          <li>
+            <a class="lab" id="deferred-light-volumes" href="labs/deferred-light-volumes/index.html">
+              <img src="thumbs/deferred-light-volumes.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Deferred light volumes</span>
+              <span class="lab-desc">Light a G-buffer with many point lights. Each light is drawn as a sphere, so it only shades the pixels it can reach, and the cost is measured live.</span>
+              <span class="lab-covers">Covers G-buffer, additive lighting, depth and stencil tests for light spheres.</span>
+            </a>
+          </li>
+          <li>
+            <a class="lab" id="shadow-mapping" href="labs/shadow-mapping/index.html">
+              <img src="thumbs/shadow-mapping.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Shadow mapping</span>
+              <span class="lab-desc">A sun with cascaded shadow maps. Look at the sun&#x27;s depth image, the cascades and the texel grid, then tune bias and filtering.</span>
+              <span class="lab-covers">Covers cascades, bias, PCF, Poisson sampling, PCSS soft shadows.</span>
+            </a>
+          </li>
+          </ul>
+        </section>
+        <section>
+          <h2>Screen-space effects</h2>
+          <ul>
+          <li>
+            <a class="lab" id="ssao" href="labs/ssao/index.html">
+              <img src="thumbs/ssao.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Ambient occlusion (SSAO)</span>
+              <span class="lab-desc">Darken corners, creases and contact points using only the depth and normals that are already on screen.</span>
+              <span class="lab-covers">Covers Crytek, hemisphere, SAO and HBAO kernels, rotation noise, blur.</span>
+            </a>
+          </li>
+          <li>
+            <a class="lab" id="ssr" href="labs/ssr/index.html">
+              <img src="thumbs/ssr.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Reflections (SSR)</span>
+              <span class="lab-desc">March each reflected ray through the depth buffer and reuse the lit color of the pixel it hits.</span>
+              <span class="lab-covers">Covers linear and DDA ray marching, binary refinement, thickness, fades.</span>
+            </a>
+          </li>
+          <li>
+            <a class="lab" id="sss" href="labs/sss/index.html">
+              <img src="thumbs/sss.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Subsurface scattering (SSS)</span>
+              <span class="lab-desc">Blur diffuse light across the screen by a real-world distance, with a different width per color, for the soft look of skin, wax or jade.</span>
+              <span class="lab-covers">Covers separable blur, skin and Burley diffusion profiles, transmission.</span>
+            </a>
+          </li>
+          </ul>
+        </section>
+        <section>
+          <h2>Materials</h2>
+          <ul>
+          <li>
+            <a class="lab" id="realistic-skin" href="labs/realistic-skin/index.html">
+              <img src="thumbs/realistic-skin.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Realistic skin</span>
+              <span class="lab-desc">Skin as a stack of layers on a ray-marched head: scattering, two specular lobes, pores, uneven color and light through thin parts. Switch each layer on and off.</span>
+              <span class="lab-covers">Covers pre-integrated skin shading, dual-lobe specular, soft shadows, thickness.</span>
+            </a>
+          </li>
+          <li>
+            <a class="lab" id="hair" href="labs/hair/index.html">
+              <img src="thumbs/hair.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Hair</span>
+              <span class="lab-desc">Thousands of strands grown from guide hairs, drawn as camera-facing ribbons and lit with a fiber model instead of a surface normal.</span>
+              <span class="lab-covers">Covers Kajiya–Kay, Marschner lobes, deep shadows, alpha to coverage.</span>
+            </a>
+          </li>
+          </ul>
+        </section>
+        <section>
+          <h2>Geometry and effects</h2>
+          <ul>
+          <li>
+            <a class="lab" id="particle-systems" href="labs/particle-systems/index.html">
+              <img src="thumbs/particle-systems.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Particle systems</span>
+              <span class="lab-desc">Fire, smoke, sparks and snow from one system: spawn particles, move them with a few forces, retire the old ones, and draw each as a small textured square.</span>
+              <span class="lab-covers">Covers CPU and GPU simulation, sorting, blending, soft particles.</span>
+            </a>
+          </li>
+          <li>
+            <a class="lab" id="tessellation-geometry" href="labs/tessellation-geometry/index.html">
+              <img src="thumbs/tessellation-geometry.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Tessellation and geometry shaders</span>
+              <span class="lab-desc">Turn a few coarse patches into as many triangles as each one needs, then change or add triangles one at a time. Emulated in WebGL 2.</span>
+              <span class="lab-covers">Covers tessellation levels, spacing modes, Bézier patches, displacement, cracks.</span>
+            </a>
+          </li>
+          <li>
+            <a class="lab" id="mesh-shaders" href="labs/mesh-shaders/index.html">
+              <img src="thumbs/mesh-shaders.jpg" alt="" width="960" height="600" loading="lazy">
+              <span class="lab-name">Mesh shaders</span>
+              <span class="lab-desc">Cut meshes into meshlets, cull them before any vertex work, and pick a level of detail per object. Emulated in WebGL 2.</span>
+              <span class="lab-covers">Covers meshlet building, frustum and cone culling, level of detail.</span>
+            </a>
+          </li>
+          </ul>
+        </section>
+    </nav>
+
+    <aside class="viewer" aria-label="Selected lab">
+      <a class="viewer-shot" id="vShot" href="#" tabindex="-1" aria-hidden="true"><img id="vImg" alt="" width="960" height="600"></a>
+      <div class="viewer-head">
+        <h2 id="vName"></h2>
+        <span class="viewer-actions">
+          <a class="tut" id="vTut" href="#">Open with tutorial</a>
+          <a class="open" id="vOpen" href="#">Open lab</a>
+        </span>
+      </div>
+      <p id="vDesc"></p>
+      <p id="vCovers" class="covers"></p>
+    </aside>
+  </main>
+
+  <footer>Every lab runs in the browser with WebGL 2 and no build step. View a lab's page source to read its shaders.</footer>
+</div>
+
+<script>
+// The viewer shows the lab under the pointer or keyboard focus.
+// To add a lab, copy one <li> block in the index above; nothing here needs to change.
+(function () {
+  var labs = Array.prototype.slice.call(document.querySelectorAll(".lab"));
+  var vShot = document.getElementById("vShot"), vImg = document.getElementById("vImg"), vName = document.getElementById("vName");
+  var vDesc = document.getElementById("vDesc"), vCovers = document.getElementById("vCovers"), vOpen = document.getElementById("vOpen"), vTut = document.getElementById("vTut");
+  var current = null;
+  var text = function (a, cls) { return a.querySelector(cls).textContent; };
+
+  function show(a) {
+    if (a === current) return;
+    current = a;
+    labs.forEach(function (l) { l.toggleAttribute("data-active", l === a); });
+    vName.textContent = text(a, ".lab-name"); vDesc.textContent = text(a, ".lab-desc"); vCovers.textContent = text(a, ".lab-covers");
+    vShot.href = vOpen.href = a.href;
+    vTut.href = a.href + "#tutorial";
+    vOpen.setAttribute("aria-label", "Open lab: " + vName.textContent);
+    // keep the old screenshot until the new one has loaded
+    var src = a.querySelector("img").getAttribute("src"), pre = new Image();
+    pre.onload = function () { if (current === a) vImg.src = src; };
+    pre.src = src;
+    if (!vImg.getAttribute("src")) vImg.src = src;
+  }
+
+  labs.forEach(function (a) {
+    a.addEventListener("mouseenter", function () { show(a); });
+    a.addEventListener("focus", function () { show(a); });
+  });
+
+  // Coming back from a lab: its back link carries #lab-name, so start on that lab.
+  var from = location.hash && document.getElementById(location.hash.slice(1));
+  var known = from && from.classList.contains("lab");
+  show(known ? from : labs[0]);
+  // With the viewer on screen the index is already in view, so undo the browser's jump to the #hash.
+  window.addEventListener("load", function () {
+    if (!known || getComputedStyle(document.querySelector(".viewer")).display === "none") return;
+    window.scrollTo(0, 0);
+    if (document.activeElement === from) from.blur();
+  });
+})();
+</script>
+</body>
+</html>

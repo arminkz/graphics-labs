@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesh shaders: a tutorial</title>
+<script>if (window.self !== window.top) document.documentElement.classList.add("in-panel");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tutorial.css">
+</head>
+<body>
+<nav class="page-nav"><a href="index.html#tutorial">Open the lab with this tutorial</a><a href="../../index.html#mesh-shaders">All labs</a></nav>
+<main class="tutorial">
+<h1>Mesh shaders: a tutorial</h1>
+<p>Try each step in the lab as you read.</p>
+<p><span class="diagram-wrap"><img class="diagram" alt="How a meshlet refers to its triangles and vertices" src="mesh-shader-diagram.svg" /></span></p>
+<p><strong>A note on the lab.</strong> Browsers cannot run mesh shaders: WebGL 2 has none, and for WebGPU they were still an open feature request when this was written (November 2026). The lab runs the same pipeline by other means (see "How the lab does this without mesh shaders"). The Vulkan GLSL in its code box is reference code. It was written for reading and has not been compiled.</p>
+<h2>The idea</h2>
+<p>In the classic pipeline, the GPU must run the vertex shader on every vertex before it can discard anything. A mesh shader pipeline works on small groups of triangles instead. It can throw away a whole group with one cheap test, and only then spend vertex work on the groups that remain.</p>
+<p>There are three steps: cut the mesh into meshlets ahead of time, test each meshlet in a task shader, and output the survivors in a mesh shader.</p>
+<pre><code>meshlets (built offline) → task shader → mesh shader → rasterizer → fragment shader
+</code></pre>
+<h2>Step 1: Build meshlets (offline)</h2>
+<p>A meshlet is a small piece of the mesh with a hard limit on its size. A common choice is 64 vertices and about 124 triangles.</p>
+<p>The index buffer is replaced by the two lists in the drawing:</p>
+<ul>
+<li><strong>Meshlet vertices:</strong> for each meshlet, the vertex buffer indices it uses.</li>
+<li><strong>Meshlet triangles:</strong> three positions in that list per triangle. Because a meshlet has few vertices, each one fits in a single byte.</li>
+</ul>
+<p>The vertex buffer itself does not change.</p>
+<pre><code class="language-c">struct Meshlet {
+  uint vertexOffset;     // where its vertex list starts in meshletVertices[]
+  uint triangleOffset;   // where its triangles start in meshletTriangles[]
+  uint vertexCount;      // at most 64
+  uint triangleCount;    // at most 124
+};
+struct MeshletBounds {
+  vec3 center; float radius;        // bounding sphere, for frustum culling
+  vec3 coneAxis; float coneCutoff;  // normal cone, for backface culling
+};
+</code></pre>
+<h3>How triangles are grouped</h3>
+<p>The lab has two builders:</p>
+<ul>
+<li><strong>Index order:</strong> walk the index buffer and start a new meshlet when a limit is reached. This is fast, but the shape of each meshlet depends on the index order. On the torus knot it produces rings around the tube.</li>
+<li><strong>Greedy:</strong> start from one triangle and repeatedly add the best neighbor. In the lab, "best" means it reuses vertices already in the meshlet, lies near the meshlet's center, and faces a similar direction.</li>
+</ul>
+<p>The function is <code>buildMeshlets</code> in the lab. Its greedy version is simple and leaves some meshlets small (on average 55.5 of 64 vertices are used). Production tools such as meshoptimizer pack them better.</p>
+<h3>Bounds</h3>
+<p>The builder also stores two things per meshlet, for the culling tests:</p>
+<ul>
+<li><strong>Bounding sphere:</strong> a center and a radius.</li>
+<li><strong>Normal cone:</strong> the average triangle normal (the axis) and how far the worst triangle strays from it.</li>
+</ul>
+<h2>Step 2: The task shader</h2>
+<p>The task shader runs before any vertex work. One run looks at a batch of meshlets and decides which ones to draw.</p>
+<p><strong>Frustum test.</strong> If the sphere lies completely behind any of the six planes of the view volume, the meshlet cannot be visible:</p>
+<pre><code class="language-glsl">if (dot(plane.xyz, center) + plane.w &lt; -radius) cull;
+</code></pre>
+<p><strong>Cone test.</strong> If every triangle in the meshlet faces away from the camera, the rasterizer would discard all of them anyway, so the meshlet can be skipped:</p>
+<pre><code class="language-glsl">vec3 d = center - eye;
+if (dot(d, axis) &gt;= cutoff * length(d) + radius) cull;
+</code></pre>
+<p>Here <code>cutoff</code> is the sine of the cone's half-angle. The reasoning: a triangle faces away when the view direction and its normal point the same way. If all normals lie within angle α of the axis, they all face away once the view direction is within 90° − α of the axis. The <code>radius</code> term covers the fact that the triangles are spread around the center.</p>
+<p>When the normals spread too widely, no cone is stored and the test is skipped. This is why the ring-shaped meshlets from the index-order builder can never be cone-culled.</p>
+<p><strong>Level of detail.</strong> The task shader can also choose which version of the mesh to use. The lab makes one choice per object, from its size on screen, before testing any meshlet.</p>
+<p><strong>Output.</strong> The shader writes the surviving meshlet indices into a payload and calls <code>EmitMeshTasksEXT(count, 1, 1)</code>. That launches one mesh shader run per survivor.</p>
+<p>In the lab this step is <code>runTasks()</code> in JavaScript.</p>
+<h2>Step 3: The mesh shader</h2>
+<p>One mesh shader run outputs one whole meshlet:</p>
+<ol>
+<li>Declare the output size with <code>SetMeshOutputsEXT(vertexCount, triangleCount)</code>.</li>
+<li>Loop over the meshlet's vertices. Load each one through the meshlet vertices list, transform it, and write it. Each vertex is processed once.</li>
+<li>Loop over the triangles and write three local indices for each.</li>
+</ol>
+<p>It can also write values per triangle, marked <code>perprimitiveEXT</code>. The Triangles and Meshlets stages in the lab are colored this way. In the classic pipeline you would have to duplicate vertices to get a flat value per triangle.</p>
+<h2>How the lab does this without mesh shaders</h2>
+<ul>
+<li><strong>Buffers:</strong> the meshlet records, both lists, the bounds and the vertex data are stored in textures.</li>
+<li><strong>Task shader:</strong> JavaScript tests every meshlet each frame and uploads the list of survivors.</li>
+<li><strong>Mesh shader:</strong> an instanced draw with one instance per surviving meshlet. The vertex shader uses <code>gl_VertexID</code> to find the triangle and corner, then follows the chain in the drawing: meshlet record, local index, vertex buffer index, position.</li>
+</ul>
+<p>The cost difference is real. In a test run of the field scene, a mesh shader would have transformed about 39,000 vertices, and the emulation ran about 202,000 vertex shader invocations.</p>
+<h2>What the numbers show</h2>
+<p>These are from the field scene's default view in one test run. Your numbers will differ with window size and camera position.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Meshlets</th>
+<th>Triangles</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full meshes</td>
+<td>n/a</td>
+<td>422,912</td>
+</tr>
+<tr>
+<td>After level of detail</td>
+<td>2,632</td>
+<td>204,800</td>
+</tr>
+<tr>
+<td>Frustum-culled</td>
+<td>1,889 (72%)</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>Cone-culled</td>
+<td>83 (3%)</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>Drawn</td>
+<td>660 (25%)</td>
+<td>54,216</td>
+</tr>
+</tbody>
+</table></div>
+<p>Cone culling does little in the field, because distant objects use coarse meshes whose few meshlets have wide cones. On the single torus knot it removed 16% of the meshlets, and on the single rock 22%.</p>
+<p>The lab was tested only in headless Chrome with software rendering, so there are no frame rates for a real GPU here.</p>
+<h2>What real engines add</h2>
+<ul>
+<li><strong>Occlusion culling:</strong> the task shader also tests each sphere against a depth pyramid from the previous frame, so meshlets hidden behind other objects are skipped.</li>
+<li><strong>Per-triangle culling:</strong> the mesh shader can drop single triangles that are back-facing or smaller than a pixel.</li>
+<li><strong>Meshlet-level detail:</strong> systems in the style of Nanite choose the level of detail per group of meshlets, not per object.</li>
+</ul>
+<p>Mesh shaders are available in DirectX 12, in Vulkan through an extension, and in Metal 3. They need fairly recent GPUs.</p>
+<h2>Things to try in the lab</h2>
+<ol>
+<li>Watch <strong>Task shader result</strong>: the yellow volume is what the main camera sees. Meshlets outside it turn dark, and meshlets on the far side of each object turn red.</li>
+<li>Switch to <strong>Final image</strong>. Nothing looks missing, although most meshlets are skipped.</li>
+<li>Turn <strong>Cone culling</strong> off and on and read <strong>Drawn</strong> in the Measured list.</li>
+<li>Pick <strong>Torus knot</strong>, open <strong>Bounds and cones</strong>, and switch the builder to <strong>Index order</strong>. No cone is usable.</li>
+<li>Drag <strong>Max triangles</strong> down to 16, then up to 200.</li>
+<li>Set <strong>Max vertices</strong> to 16 with 124 triangles and check <strong>Average meshlet fill</strong>.</li>
+<li>Open <strong>Level of detail</strong> and move <strong>Full detail above</strong>.</li>
+</ol>
+<hr />
+<h1>When are the level-of-detail versions made and stored?</h1>
+<p>They are made ahead of time, when the asset is built, and saved with it. Nothing is simplified while the game runs. At run time the engine only chooses which stored version to draw.</p>
+<h2>When they are created</h2>
+<ul>
+<li><strong>By an artist:</strong> someone models the lower versions by hand in a tool like Blender or Maya. This gives the best quality, and it is common for characters and other important objects.</li>
+<li><strong>Automatically at import:</strong> the engine or a build tool runs a mesh simplification algorithm that removes edges until a target triangle count is reached. Unreal, Unity, Simplygon and meshoptimizer all offer this.</li>
+<li><strong>In a mesh shader pipeline:</strong> the meshlets and their bounds are built for every version in the same offline step.</li>
+</ul>
+<p>The lab follows the same order, except that "build time" is page load. It generates each object at three resolutions, puts all of them into one shared vertex buffer, and runs the meshlet builder on each. In <code>runTasks()</code>, the only per-frame work is picking a version per object from its size on screen.</p>
+<h2>Why not simplify at run time?</h2>
+<p>Good simplification is slow. It has to measure how much each removal changes the shape, and also protect UV seams and silhouettes. That takes far longer than a frame, so it is done once and stored.</p>
+<h2>When it is worth storing them</h2>
+<p>It pays off when an object has many triangles and is seen from very different distances. Far away, a detailed mesh produces triangles smaller than a pixel. Those cost vertex work, add nothing visible, and rasterize inefficiently.</p>
+<p>It is not worth it when:</p>
+<ul>
+<li>the object is already low-poly, or</li>
+<li>it is always seen from about the same distance, such as a first-person weapon.</li>
+</ul>
+<h2>What it costs</h2>
+<ul>
+<li><strong>Memory:</strong> less than you might expect, because each version is much smaller than the one before. In the lab, the rock's two extra versions add about 31% to its triangle count and the knot's add about 41%. Engines often load the coarse versions first and stream the detailed one in when needed.</li>
+<li><strong>Popping:</strong> the switch between versions can be visible. Engines hide it with a cross-fade or dither, or by switching only when the difference is under a pixel.</li>
+</ul>
+<p>Systems in the style of Nanite still follow the same rule. They build a whole hierarchy of simplified meshlet groups offline, and at run time they only select from it, per group instead of per object.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Realistic skin: a walkthrough of the lab</title>
+<script>if (window.self !== window.top) document.documentElement.classList.add("in-panel");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tutorial.css">
+</head>
+<body>
+<nav class="page-nav"><a href="index.html#tutorial">Open the lab with this tutorial</a><a href="../../index.html#realistic-skin">All labs</a></nav>
+<main class="tutorial">
+<h1>Realistic skin: a walkthrough of the lab</h1>
+<p>The panel on the right is ordered as four layers, and this walkthrough follows the same order. The thumbnails under the head are numbered 1 to 8.</p>
+<h2>The one idea</h2>
+<p>A head shaded with plain diffuse lighting and one highlight looks like painted plastic. Real skin differs from that in several separate ways, and each one is a layer you can add:</p>
+<ol>
+<li>Light scatters under the surface before it comes back out.</li>
+<li>An oily top layer reflects light in two overlapping highlights.</li>
+<li>The surface has pores, and its color is uneven.</li>
+<li>Parts of the head shadow each other, and thin parts let light through.</li>
+</ol>
+<p><em>Try it:</em> press <strong>Mannequin (all layers off)</strong>, then <strong>Full skin</strong>. Set <strong>Split compare</strong> to 50% to see both at once: mannequin on the left of the line, your settings on the right.</p>
+<h2>How the lab draws the head</h2>
+<p>There is no triangle mesh. The head is a distance function, and every pixel finds the surface by marching a ray through it. The notes at the end of this page explain that in detail.</p>
+<p>One thing matters for everything below: the shading pass writes diffuse light and specular light into separate buffers. Scattering only affects diffuse light, so the two have to stay apart until the end.</p>
+<h2>Layer 1: Diffuse scattering (thumbnails 5 and 6)</h2>
+<p>Light that enters skin travels a short distance under the surface and leaves somewhere else. Red light travels farthest. The result is soft shading and red edges on shadows.</p>
+<p>The <strong>Diffuse</strong> menu has three models:</p>
+<ul>
+<li><strong>Lambert:</strong> no scattering. Light stops where it lands, so every pore and shadow edge is hard and gray.</li>
+<li><strong>Pre-integrated skin:</strong> no blur pass. On a curved surface, scattering makes light wrap around the edge of the lit side, and how much depends on how tightly the surface curves. That result is computed once into a lookup table, indexed by N·L and curvature. Each pixel does one texture read. The table is drawn in the panel.</li>
+<li><strong>Screen-space separable SSS:</strong> shade with Lambert first, then blur only the diffuse light in two 1D passes. The blur uses a measured skin profile with a different width per color channel, and the width is scaled by depth so that it stays a fixed number of millimeters on the face.</li>
+</ul>
+<p>Thumbnail <strong>3 (Curvature)</strong> shows the value the lookup table uses: the nose and ears are tight curves, the forehead is nearly flat. Thumbnail <strong>5</strong> is the diffuse light as shaded, and <strong>6</strong> is the same light after scattering.</p>
+<p><em>Try it:</em> press <strong>Nose shadow close-up</strong> and switch between the three models. With Lambert the shadow edge is gray and sharp. With either scattering model it turns soft and red. Then move <strong>Scatter width</strong>.</p>
+<h2>Layer 2: Specular, the oily layer (thumbnail 7)</h2>
+<p>The highlight comes from a thin film of oil and the rough outer skin under it. One lobe cannot match both, so skin shaders use two:</p>
+<ul>
+<li>a <strong>sharp lobe</strong> that gives the bright core, and</li>
+<li>a <strong>broad lobe</strong> that gives the wide soft sheen around it.</li>
+</ul>
+<p><strong>Sharp lobe share</strong> sets the mix between them, <strong>Roughness</strong> widens both, and <strong>Oiliness</strong> scales the whole layer.</p>
+<p>Specular light is added after scattering and is never blurred. It reflects off the top surface and does not go under the skin, so it stays crisp even where the diffuse light is soft. That contrast is a large part of why skin looks wet instead of waxy.</p>
+<p><em>Try it:</em> turn <strong>Dual-lobe specular</strong> off. The highlight on the forehead and nose becomes a single hard blob.</p>
+<h2>Layer 3: Surface detail (thumbnails 1 and 2)</h2>
+<ul>
+<li><strong>Color variation:</strong> blood near the surface, freckles, lips and brows change the albedo. Thumbnail <strong>1</strong> shows the skin color alone.</li>
+<li><strong>Pore depth:</strong> small bumps in the normal. They break up the highlight, which is where pores are most visible. Thumbnail <strong>2</strong> shows the normals with pores.</li>
+<li><strong>Peach fuzz:</strong> a soft brightening at grazing angles, from fine hairs catching the light.</li>
+<li><strong>Melanin</strong> and <strong>Blood flush:</strong> shift the base color darker or redder.</li>
+</ul>
+<p><em>Try it:</em> raise <strong>Melanin</strong>. Darker skin shows scattering less and specular more, because less diffuse light comes back out.</p>
+<h2>Layer 4: Light transport (thumbnail 4)</h2>
+<ul>
+<li><strong>Self-shadowing:</strong> the nose, brow and ears block the key light from other parts of the face.</li>
+<li><strong>Ambient occlusion:</strong> creases such as the eye sockets and the sides of the nose receive less sky light.</li>
+<li><strong>Transmission:</strong> where the head is thin, light entering from behind reaches the front. The shader marches from the surface point toward the light, through the inside of the head, and measures how much flesh is in the way. Little flesh means light gets through, tinted red.</li>
+</ul>
+<p>Thumbnail <strong>4</strong> shows shadow times ambient occlusion. The <strong>View</strong> menu also has <strong>Light getting through</strong>, which shows the transmission term alone.</p>
+<p><em>Try it:</em> press <strong>Back-lit ear</strong>, then toggle <strong>Transmission</strong>. Change <strong>Translucency</strong> to control how thick a part can be and still glow.</p>
+<h2>Lighting, camera and cost</h2>
+<ul>
+<li><strong>Key azimuth</strong> and <strong>Key elevation</strong> move the main light. <strong>Cool rim light from behind</strong> adds a second light that outlines the head.</li>
+<li><strong>Render scale</strong> changes the resolution. Every pixel marches several rays, so this lab is heavy, and 50% helps on a slow GPU.</li>
+<li>The image only changes when you change a setting, so the lab renders once and then waits.</li>
+</ul>
+<h2>The whole stack in short</h2>
+<p><strong>For each pixel:</strong> find the surface, then compute skin color, a normal with pores, curvature, shadow, ambient occlusion and thickness.</p>
+<p><strong>Diffuse light:</strong> shade it, scatter it (lookup table or screen-space blur), and multiply by the skin color.</p>
+<p><strong>Specular light:</strong> two lobes, added on top without any blur.</p>
+<p><strong>Thin parts:</strong> add the light that came through.</p>
+<hr />
+<h1>Notes: shadows and how the lab renders</h1>
+<h2>How self-shadowing works</h2>
+<p><strong>Self-shadowing means an object blocks light from reaching another part of itself</strong>, like the nose shading the cheek. The test is the same as for any shadow: from the point you're shading, look toward the light and ask whether anything is in the way. There's no special case for "self"; the object is simply included as a possible blocker for its own surface.</p>
+<h3>How this lab does it</h3>
+<p>The head isn't a triangle mesh. It's a <strong>signed distance field (SDF)</strong>: a function <code>map(p)</code> that returns the distance from any point <code>p</code> to the nearest surface. That makes the shadow test a short ray march:</p>
+<pre><code class="language-glsl">vec3 start = p + N * 0.015;          // step off the surface first
+float t = 0.02, shadow = 1.0;
+for (int i = 0; i &lt; 28; i++) {
+  float d = map(start + L * t);      // distance to the nearest surface from here
+  if (d &lt; 0.001) { shadow = 0.0; break; }   // touched something: fully in shadow
+  shadow = min(shadow, 14.0 * d / t);       // near miss: partial shadow
+  t += clamp(d, 0.015, 0.25);        // safe to advance by d: nothing is closer
+}
+</code></pre>
+<ol>
+<li><strong>Start at the surface point and walk toward the light.</strong> At each step, <code>map</code> tells you how far the nearest surface is, so you can safely jump that far.</li>
+<li><strong>If the distance drops to zero, the ray hit the head</strong> (the nose, the brow, the ear), so the point is in shadow.</li>
+<li><strong>If the ray reaches open space,</strong> the point is lit.</li>
+</ol>
+<h3>Soft edges for free</h3>
+<p>The line <code>shadow = min(shadow, 14.0 * d / t)</code> gives a penumbra. A ray that <em>almost</em> grazes the nose has a small <code>d</code> at some point along the way. The ratio <code>d / t</code> is roughly the angle by which the ray missed, so a near miss gives partial shadow. The constant 14 sets the hardness: a higher value means a sharper edge, like a smaller light source.</p>
+<p>This matters for skin, because the soft shadow edge is where scattering shows most. Light bleeds into the shadow and the edge turns red. Try <strong>Nose shadow close-up</strong> and switch between Lambert and the scattering models.</p>
+<h3>The two details that prevent artifacts</h3>
+<ul>
+<li><strong>The start offset</strong> (<code>p + N * 0.015</code>). Without it, the ray starts at distance zero and immediately "hits" the surface it's standing on. That's the same problem as shadow acne, and the same kind of fix as the bias in shadow mapping.</li>
+<li><strong>Skipping points that face away from the light.</strong> They're dark anyway from N·L, so the lab doesn't march for them.</li>
+</ul>
+<h3>Compared with shadow mapping</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Shadow map</th>
+<th>SDF ray march (this lab)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Works with</td>
+<td>any triangle mesh</td>
+<td>only shapes with a distance function</td>
+</tr>
+<tr>
+<td>Resolution</td>
+<td>limited by texels, so blocky up close</td>
+<td>exact at any zoom</td>
+</tr>
+<tr>
+<td>Soft edges</td>
+<td>need PCF or PCSS filtering</td>
+<td>come from <code>d / t</code></td>
+</tr>
+<tr>
+<td>Cost</td>
+<td>one extra render of the scene, then cheap lookups</td>
+<td>up to 28 <code>map</code> calls per pixel</td>
+</tr>
+</tbody>
+</table></div>
+<p>Thumbnail <strong>4 (Shadow+AO)</strong> shows the shadow term alone, and the <strong>Self-shadowing</strong> checkbox turns it off.</p>
+<h2>Is this lab ray-marched or rasterized?</h2>
+<p>Ray-marched, for the head's geometry. It's the only lab in this collection that works this way; the others rasterize triangle meshes.</p>
+<p><strong>What's ray-marched:</strong></p>
+<ul>
+<li><strong>Visibility.</strong> The GPU rasterizes just one full-screen quad. For each pixel, the fragment shader shoots a ray from the camera and marches it through the distance field until it hits the head.</li>
+<li><strong>Normals and curvature.</strong> These come from sampling the distance field around the hit point.</li>
+<li><strong>Shadows, ambient occlusion and transmission thickness.</strong> Each is a short extra march through the same field.</li>
+</ul>
+<p><strong>What isn't:</strong></p>
+<ul>
+<li><strong>The skin shading.</strong> Lambert, the pre-integrated lookup, dual-lobe GGX, pores and albedo are ordinary shading math. They'd be the same code in a rasterizer's fragment shader.</li>
+<li><strong>The screen-space SSS and the composite.</strong> These are full-screen passes that only need the diffuse, specular and depth buffers.</li>
+</ul>
+<p>So the structure is still "fill buffers, then post-process", like a deferred renderer. Only the step that fills the buffers changed.</p>
+<p><strong>Why:</strong> a believable head as a triangle mesh needs thousands of vertices, which would mean embedding a model file. An SDF head is about 20 lines of blended ellipsoids, and it gives exact curvature, soft shadows and real per-pixel thickness with very little code. The cost is that every pixel pays for around a hundred distance-field evaluations, which is why the lab renders only on change and has a render-scale control.</p>
+<p><strong>How the pieces map to a real-time engine:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>This lab (SDF)</th>
+<th>Real-time engine (mesh)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ray march to find the surface</td>
+<td>Rasterize triangles</td>
+</tr>
+<tr>
+<td>Normal from the field's gradient</td>
+<td>Vertex normals + normal map</td>
+</tr>
+<tr>
+<td>Pores from procedural noise</td>
+<td>Detail normal map (often a tiled micro-normal)</td>
+</tr>
+<tr>
+<td>Curvature from the field</td>
+<td>Baked curvature texture, or screen-space derivatives</td>
+</tr>
+<tr>
+<td>Shadow march</td>
+<td>Shadow map + contact shadows</td>
+</tr>
+<tr>
+<td>Thickness march</td>
+<td>Baked thickness map, or shadow-map depth difference</td>
+</tr>
+<tr>
+<td>Procedural color variation</td>
+<td>Scanned albedo texture</td>
+</tr>
+</tbody>
+</table></div>
+<h2>If the head were a mesh: how shadows would be handled</h2>
+<p>Shadow maps would be the base, but a face needs more than one technique, because its self-shadowing happens at very different scales. A typical real-time setup stacks four layers.</p>
+<h3>1. A shadow map for the large shapes</h3>
+<p>The nose's shadow on the cheek, the brow over the eyes, the head on the neck. Render depth from the light, then compare per pixel.</p>
+<p>The problem is resolution. A cascade that covers a whole scene gives the face only a few texels, so engines give hero characters a <strong>per-object shadow map</strong>: the light's frustum is fitted tightly around just the head or body. A 2048² map over a 30 cm head is about 0.15 mm per texel.</p>
+<h3>2. Contact shadows for the small shapes</h3>
+<p>The bias that prevents acne also erases shadows closer than about a millimeter to their caster: nostrils, eyelids, lip creases, where the ear meets the head.</p>
+<p>The fix is a short <strong>screen-space ray march</strong>: from each pixel, step a few centimeters toward the light through the depth buffer, and if the ray goes behind something, darken the pixel. It's the SSR lab's march pointed at the light, with the same thickness guess and the same limit that it only sees what's on screen.</p>
+<h3>3. Ambient occlusion and cavity maps, baked</h3>
+<p>Pores, wrinkles and creases are too small for either method. Their occlusion is <strong>baked into textures</strong>: an AO map for ambient light, and often a cavity map that also dims specular inside pores. SSAO or GTAO adds the mid-scale part that changes with animation.</p>
+<h3>4. Soft, red shadow edges</h3>
+<ul>
+<li><strong>Filtering:</strong> PCF or PCSS, so the penumbra has some width.</li>
+<li><strong>Scattering:</strong> with screen-space SSS the blur reddens the penumbra automatically, because the shadow is part of the diffuse light being blurred. With pre-integrated skin there's no blur, so Penner uses a second lookup table indexed by the shadow value and penumbra width to tint the edge.</li>
+</ul>
+<h3>A bonus from the shadow map: transmission</h3>
+<p>The lab measures thickness by marching through the head. With a mesh, the shadow map provides it:</p>
+<pre><code class="language-glsl">float thickness = myDepthFromLight - shadowMapDepth;   // distance traveled inside
+</code></pre>
+<p>That's Jimenez's translucency method, and it's why back-lit ears work in games without an extra pass.</p>
+<h3>What's changing</h3>
+<p>Engines with hardware ray tracing increasingly use <strong>ray-traced shadows</strong> for hero characters: no bias tuning, no resolution limit, and correct contact and penumbra in one technique. Unreal's virtual shadow maps are the rasterized answer to the same problem: very high resolution, allocated only where the screen needs it.</p>
+</main>
+</body>
+</html>

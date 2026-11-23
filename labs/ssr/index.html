@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSR Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport with a pipeline strip and a probe overlay; instrument panel on the right. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #4fd1c5;
+  --probe: #ffd34d;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 360px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas#c { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+canvas#ov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.82); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.chip.pr b { color: var(--probe); }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: #e6e9ef; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 120px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 10px; }
+.row { display: grid; grid-template-columns: 104px 1fr 62px; align-items: center; gap: 8px; margin: 5px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+.row.dim { opacity: .45; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.legend2 { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend2 span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; background: var(--c); }
+.heatkey { height: 10px; border-radius: 3px; background: linear-gradient(90deg, #05050f, #1a33cc, #1acbb3, #f2d933, #ff3319, #ffffff); margin-top: 8px; }
+.heatlbl { display: flex; justify-content: space-between; font: 11px var(--font-mono); color: var(--muted); }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL screen-space reflections scene"></canvas>
+    <canvas id="ov" aria-hidden="true"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudTech">technique</span>
+      <span class="chip" id="hudTime">fps</span>
+      <span class="chip pr" id="hudProbe">click a reflective pixel to probe its ray</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll or pinch to zoom · right-drag to pan · click to probe</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Screen-space reflections lab</h1>
+      <p class="sub">Deferred pipeline in WebGL 2: G-buffer → lighting → for every reflective pixel, march the reflected ray through the depth buffer → where it hits, reuse that pixel's lit color as the reflection.</p>
+    </div>
+
+    <section>
+      <h2>Ray marching method</h2>
+      <select id="tech" aria-label="Ray marching method">
+        <option value="0">1. View-space linear march</option>
+        <option value="1" selected>2. Screen-space DDA (McGuire & Mara 2014)</option>
+      </select>
+      <div class="explain" id="explain"></div>
+    </section>
+
+    <section>
+      <h2>March settings</h2>
+      <div class="row"><label for="steps">Max steps</label><input id="steps" type="range" min="8" max="256" step="1" value="64"><output id="stepsV">64</output></div>
+      <div class="row" id="rowStep"><label for="stepLen">Step length</label><input id="stepLen" type="range" min="0.02" max="1.5" step="0.01" value="0.25"><output id="stepLenV">0.25 m</output></div>
+      <div class="row" id="rowStride"><label for="stride">Stride</label><input id="stride" type="range" min="1" max="16" step="1" value="2"><output id="strideV">3 px</output></div>
+      <div class="row"><label for="maxDist">Max distance</label><input id="maxDist" type="range" min="2" max="40" step="0.5" value="18"><output id="maxDistV">18.0 m</output></div>
+      <div class="row"><label for="thick">Thickness</label><input id="thick" type="range" min="0.01" max="3" step="0.01" value="0.35"><output id="thickV">0.35 m</output></div>
+      <div class="row"><label for="refine">Binary refine</label><input id="refine" type="range" min="0" max="8" step="1" value="4"><output id="refineV">4</output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="jitter" checked> Jitter the start of each ray (4×4 pattern)</label>
+        <label><input type="checkbox" id="half"> Trace at half resolution</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Hiding what the screen can't see</h2>
+      <div class="checks">
+        <label><input type="checkbox" id="edge" checked> Fade hits near the screen edge</label>
+        <label><input type="checkbox" id="facing" checked> Fade rays that point back toward the camera</label>
+        <label><input type="checkbox" id="sky" checked> Fall back to the sky when a ray misses</label>
+        <label><input type="checkbox" id="fresnel" checked> Fresnel (stronger reflections at grazing angles)</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Floor material</h2>
+      <div class="row"><label for="rough">Roughness</label><input id="rough" type="range" min="0" max="0.7" step="0.01" value="0.06"><output id="roughV">0.06</output></div>
+      <div class="row"><label for="refl">Reflectivity</label><input id="refl" type="range" min="0" max="1" step="0.01" value="0.45"><output id="reflV">0.55</output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="anim" checked> Spin the yellow cube</label>
+        <label><input type="checkbox" id="stripOn" checked> Show pipeline stages under the scene</label>
+      </div>
+      <div class="btns"><button class="p" type="button" id="reset">Reset camera</button><button class="p" type="button" id="clearProbe">Clear probe</button></div>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <select id="view" aria-label="Main view">
+        <option value="0">Final image</option>
+        <option value="3">Lit, before reflections</option>
+        <option value="4">Hit UV (where each ray landed)</option>
+        <option value="5">Steps per ray</option>
+        <option value="6">Confidence (fades)</option>
+        <option value="7">Reflection only</option>
+        <option value="2">G-buffer: view-space normals</option>
+        <option value="1">G-buffer: depth</option>
+      </select>
+      <div id="lgUv" class="legend2" style="display:none">
+        <span style="--c:#e04030">red = hit's screen x (0 → 1)</span>
+        <span style="--c:#40c050">green = hit's screen y (0 → 1)</span>
+        <span style="--c:#000000;outline:1px solid #444">black = the ray missed or left the screen</span>
+        <span style="--c:#23262e">dark gray = not reflective, no ray traced</span>
+      </div>
+      <div id="lgSteps" style="display:none"><div class="heatkey"></div><div class="heatlbl"><span>0</span><span>max steps + refine</span></div></div>
+      <div id="lgConf" class="legend2" style="display:none">
+        <span style="--c:#ffffff">1: trusted hit</span>
+        <span style="--c:#000000;outline:1px solid #444">0: miss, or faded out (edge, facing camera, max distance)</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Measured</h2>
+      <dl class="kv">
+        <dt>SSR buffer</dt><dd id="sRes">–</dd>
+        <dt>Worst-case depth reads</dt><dd id="sWorst">–</dd>
+        <dt>GPU, G-buffer + lighting</dt><dd id="gG">–</dd>
+        <dt>GPU, SSR trace</dt><dd id="gS">–</dd>
+        <dt>Probe</dt><dd id="sProbe">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Click a spot on the floor. The yellow line shows where its reflected ray landed on the screen. The cyan dot is the pixel whose color it borrows.</li>
+        <li>Open the <b>Hit UV</b> stage: every reflective pixel is colored by where its ray hit. Black means no hit.</li>
+        <li>Orbit to look steeply down at the floor. Reflections vanish: the rays point back toward the camera, and what's behind you was never on screen. Turn off <b>Fade rays that point back</b> to see the garbage that fade hides.</li>
+        <li>Pan until a pillar touches the screen edge. Its reflection fades out before the edge, because the ray would need pixels that don't exist.</li>
+        <li>Set <b>Thickness</b> to 3 m: reflections smear behind the spheres and the thin pole. Set it to 0.02 m: rays slip behind objects and leave holes.</li>
+        <li>Pick the view-space march, set <b>Step length</b> to 1 m and <b>Binary refine</b> to 0: stair-stepped reflections. Raise refine to 4 to fix them for a few extra reads.</li>
+        <li>Raise floor <b>Roughness</b>: reflections blur by reading a lower-resolution mip of the lit image, more for farther hits.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+// ---------- UI ----------
+const TECHS = [
+  "Step along the reflected ray in 3D by a fixed length. Project every step to the screen, read the depth buffer there, and stop when the ray is behind the stored surface but within the thickness. Simple, but steps are uneven on screen: near the camera one step can jump over many pixels and miss thin objects, and far away many steps land on the same pixel and waste work.",
+  "Project the ray's start and end to the screen once, then walk along that 2D line one pixel at a time (or every Stride pixels), interpolating depth correctly with 1/w. Every step lands on a new pixel, so no pixel is skipped and none is tested twice: cheaper and more accurate than marching in 3D. Engines go further with a Hi-Z depth pyramid that lets a ray skip empty space in big jumps."
+];
+const state = { tech: 1, steps: 64, stepLen: 0.25, stride: 2, maxDist: 18, thick: 0.35, refine: 4, jitter: true, half: false, edge: true, facing: true, sky: true, fresnel: true, rough: 0.06, refl: 0.45, anim: true, strip: true, view: 0, probe: null };
+const fmt = { steps: v => String(v), stepLen: v => v.toFixed(2) + " m", stride: v => v + " px", maxDist: v => v.toFixed(1) + " m", thick: v => v.toFixed(2) + " m", refine: v => String(v), rough: v => v.toFixed(2), refl: v => v.toFixed(2) };
+for (const k in fmt) { const el = $(k), out = $(k + "V"); el.addEventListener("input", () => { state[k] = +el.value; out.textContent = fmt[k](state[k]); }); }
+for (const k of ["jitter", "half", "edge", "facing", "sky", "fresnel", "anim"]) $(k).addEventListener("change", e => state[k] = e.target.checked);
+$("tech").addEventListener("change", e => { state.tech = +e.target.value; syncTech(); });
+function syncTech() {
+  $("explain").textContent = TECHS[state.tech];
+  $("hudTech").innerHTML = `<b>${state.tech + 1}</b> · ${$("tech").options[state.tech].text.replace(/^\d+\.\s*/, "")}`;
+  $("rowStep").classList.toggle("dim", state.tech !== 0); $("rowStride").classList.toggle("dim", state.tech !== 1);
+}
+const STAGES = [[1, "1 Depth"], [2, "2 Normals"], [3, "3 Lit"], [4, "4 Hit UV"], [5, "5 Steps"], [6, "6 Confidence"], [7, "7 Reflection"], [0, "8 Final"]];
+const stripEl = $("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+function setView(v) {
+  state.view = v; $("view").value = String(v); thumbs.forEach(t => t.el.classList.toggle("on", t.v === v));
+  $("lgUv").style.display = v === 4 ? "" : "none"; $("lgSteps").style.display = v === 5 ? "" : "none"; $("lgConf").style.display = v === 6 ? "" : "none";
+}
+$("view").addEventListener("change", e => setView(+e.target.value));
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; rectsDirty = true; });
+$("clearProbe").addEventListener("click", () => { state.probe = null; });
+
+// ---------- math ----------
+const V3 = { sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], norm: a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; } };
+const M = {
+  mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; },
+  persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; },
+  lookAt(e, c, u) { const z = V3.norm(V3.sub(e, c)), x = V3.norm(V3.cross(u, z)), y = V3.cross(z, x); return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -V3.dot(x, e), -V3.dot(y, e), -V3.dot(z, e), 1]); },
+  dir(m, d) { return V3.norm([m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]]); },
+  invRot3(m) { return new Float32Array([m[0], m[4], m[8], m[1], m[5], m[9], m[2], m[6], m[10]]); },
+  trs(t, r, s) {
+    const [cx, cy, cz] = r.map(Math.cos), [sx, sy, sz] = r.map(Math.sin);
+    const Rx = new Float32Array([1, 0, 0, 0, 0, cx, sx, 0, 0, -sx, cx, 0, 0, 0, 0, 1]);
+    const Ry = new Float32Array([cy, 0, -sy, 0, 0, 1, 0, 0, sy, 0, cy, 0, 0, 0, 0, 1]);
+    const Rz = new Float32Array([cz, sz, 0, 0, -sz, cz, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const S = new Float32Array([s[0], 0, 0, 0, 0, s[1], 0, 0, 0, 0, s[2], 0, 0, 0, 0, 1]);
+    const T = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, t[0], t[1], t[2], 1]);
+    return M.mul(T, M.mul(Ry, M.mul(Rx, M.mul(Rz, S))));
+  }
+};
+const lin = c => c.map(x => Math.pow(x, 2.2));
+function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: false, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+if (!gl.getExtension("EXT_color_buffer_float")) { fail("This demo needs the EXT_color_buffer_float WebGL extension (float render targets), which your GPU doesn't expose."); throw new Error("no float rt"); }
+const timerExt = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+const QUAD_VS = `#version 300 es
+layout(location=0) in vec3 aPos; void main(){ gl_Position = vec4(aPos.xy, 0.0, 1.0); }`;
+const SKY = `
+vec3 sky(vec3 d){
+  vec3 sunD = normalize(vec3(0.4, 0.8, 0.3));
+  vec3 c = d.y >= 0.0 ? mix(vec3(0.72, 0.80, 0.92), vec3(0.22, 0.42, 0.82), pow(d.y, 0.6)) : mix(vec3(0.45, 0.43, 0.42), vec3(0.16, 0.15, 0.14), clamp(-d.y * 4.0, 0.0, 1.0));
+  c += vec3(1.0, 0.9, 0.7) * pow(max(dot(d, sunD), 0.0), 600.0) * 30.0;
+  return c * 1.3;
+}`;
+
+const gbufProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNor;
+uniform mat4 uModel, uView, uProj;
+out vec3 vPosV; out vec3 vNorV; out vec3 vW;
+void main(){
+  vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz;
+  vec4 v = uView * w; vPosV = v.xyz;
+  vNorV = mat3(uView) * (transpose(inverse(mat3(uModel))) * aNor);
+  gl_Position = uProj * v;
+}`, `#version 300 es
+precision highp float;
+in vec3 vPosV; in vec3 vNorV; in vec3 vW;
+uniform vec3 uColor; uniform vec3 uMat; uniform int uChecker;
+layout(location=0) out vec4 oAlb; layout(location=1) out vec4 oNor; layout(location=2) out vec4 oDepth; layout(location=3) out vec4 oMat;
+void main(){
+  vec3 c = uColor;
+  if (uChecker == 1) { float k = mod(floor(vW.x) + floor(vW.z), 2.0); c *= mix(0.55, 1.0, k); }
+  oAlb = vec4(c, 1.0); oNor = vec4(normalize(vNorV) * 0.5 + 0.5, 1.0);
+  oDepth = vec4(-vPosV.z, 0.0, 0.0, 0.0); oMat = vec4(uMat, 1.0);
+}`);
+
+const lightProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uAlb, uNor, uDepth, uMat;
+uniform vec3 uSunV, uUpV; uniform mat3 uInvRot; uniform vec2 uTanHalf, uSize;
+out vec4 o;
+${SKY}
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / uSize;
+  float d = texelFetch(uDepth, p, 0).r;
+  vec3 vdir = normalize(vec3((uv * 2.0 - 1.0) * uTanHalf, -1.0));
+  if (d > 9000.0) { o = vec4(sky(uInvRot * vdir), 1.0); return; }
+  vec3 A = texelFetch(uAlb, p, 0).rgb, N = normalize(texelFetch(uNor, p, 0).xyz * 2.0 - 1.0);
+  vec4 m = texelFetch(uMat, p, 0);
+  vec3 amb = mix(vec3(0.20, 0.18, 0.16), vec3(0.45, 0.55, 0.75), dot(N, uUpV) * 0.5 + 0.5) * 0.55;
+  vec3 col = A * (amb + vec3(1.0, 0.93, 0.82) * 2.0 * max(dot(N, uSunV), 0.0)) + A * m.b * 5.0;
+  o = vec4(col, 1.0);
+}`);
+
+const ssrProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uDepth, uNor, uMat, uNoise;
+uniform mat4 uProj;
+uniform vec2 uSize, uTanHalf;
+uniform int uTech, uSteps, uRefine, uJitter, uEdge, uFacing;
+uniform float uStepLen, uStride, uMaxDist, uThick, uNear;
+out vec4 o;
+float dAt(vec2 uv){ return textureLod(uDepth, uv, 0.0).r; }
+vec2 proj(vec3 q){ vec4 c = uProj * vec4(q, 1.0); return c.xy / c.w * 0.5 + 0.5; }
+bool offscreen(vec2 q){ return q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0; }
+void main(){
+  vec2 uv = gl_FragCoord.xy / uSize;
+  float d0 = dAt(uv);
+  vec4 mat = textureLod(uMat, uv, 0.0);
+  if (d0 > 9000.0 || mat.r < 0.01) { o = vec4(0.0, 0.0, 0.0, -1.0); return; }
+  vec3 P = vec3((uv * 2.0 - 1.0) * uTanHalf * d0, -d0);
+  vec3 N = normalize(textureLod(uNor, uv, 0.0).xyz * 2.0 - 1.0);
+  vec3 R = reflect(normalize(P), N);
+  P += N * (0.01 + 0.002 * d0);
+  float jit = uJitter == 1 ? texelFetch(uNoise, ivec2(gl_FragCoord.xy) & 3, 0).r : 0.5;
+  bool hit = false; vec2 huv = vec2(0.0); float steps = 0.0, tHit = 0.0;
+  if (uTech == 0) {
+    float tPrev = 0.0;
+    for (int i = 0; i < 256; i++) {
+      if (i >= uSteps) break;
+      float t = (float(i) + jit) * uStepLen + uStepLen * 0.5;
+      if (t > uMaxDist) break;
+      vec3 Q = P + R * t;
+      if (-Q.z < uNear) break;
+      vec2 q = proj(Q);
+      if (offscreen(q)) break;
+      steps += 1.0;
+      float sd = dAt(q), rd = -Q.z;
+      if (rd > sd && rd < sd + uThick) {
+        float a = tPrev, b = t;
+        for (int k = 0; k < 8; k++) {
+          if (k >= uRefine) break;
+          float m = 0.5 * (a + b); vec3 Mq = P + R * m;
+          if (-Mq.z > dAt(proj(Mq))) b = m; else a = m;
+          steps += 1.0;
+        }
+        hit = true; tHit = b; huv = proj(P + R * b); break;
+      }
+      tPrev = t;
+    }
+  } else {
+    float len = uMaxDist;
+    if (P.z + R.z * len > -uNear) len = (-uNear - P.z) / R.z;
+    vec3 Q0 = P, Q1 = P + R * len;
+    vec4 H0 = uProj * vec4(Q0, 1.0), H1 = uProj * vec4(Q1, 1.0);
+    float k0 = 1.0 / H0.w, k1 = 1.0 / H1.w;
+    float z0k = Q0.z * k0, z1k = Q1.z * k1;
+    vec2 S0 = (H0.xy * k0 * 0.5 + 0.5) * uSize, S1 = (H1.xy * k1 * 0.5 + 0.5) * uSize;
+    vec2 delta = S1 - S0;
+    if (dot(delta, delta) < 1e-4) delta = vec2(0.01, 0.0);
+    bool perm = abs(delta.x) < abs(delta.y);
+    if (perm) { delta = delta.yx; S0 = S0.yx; S1 = S1.yx; }
+    float dir = sign(delta.x), invdx = dir / delta.x;
+    vec2 dS = vec2(dir, delta.y * invdx) * uStride;
+    float dzk = (z1k - z0k) * invdx * uStride, dk = (k1 - k0) * invdx * uStride;
+    float nSteps = abs(delta.x) / uStride;
+    float prevD = -Q0.z, sPrev = 0.0;
+    for (int i = 0; i < 256; i++) {
+      if (i >= uSteps) break;
+      float s = float(i) + jit;
+      if (s > nSteps) break;
+      vec2 Sc = S0 + dS * s;
+      vec2 q = (perm ? Sc.yx : Sc) / uSize;
+      if (offscreen(q)) break;
+      steps += 1.0;
+      float rd = -(z0k + dzk * s) / (k0 + dk * s);
+      float sd = dAt(q);
+      float dmin = min(prevD, rd), dmax = max(prevD, rd);
+      if (dmax >= sd && dmin <= sd + uThick) {
+        float a = sPrev, b = s;
+        for (int k = 0; k < 8; k++) {
+          if (k >= uRefine) break;
+          float m = 0.5 * (a + b);
+          vec2 Sm = S0 + dS * m; vec2 qm = (perm ? Sm.yx : Sm) / uSize;
+          float rm = -(z0k + dzk * m) / (k0 + dk * m);
+          if (rm >= dAt(qm)) b = m; else a = m;
+          steps += 1.0;
+        }
+        vec2 Sh = S0 + dS * b; huv = (perm ? Sh.yx : Sh) / uSize;
+        float kh = k0 + dk * b, zh = (z0k + dzk * b) / kh;
+        tHit = length(vec3((huv * 2.0 - 1.0) * uTanHalf * -zh, zh) - P);
+        hit = true; break;
+      }
+      prevD = rd; sPrev = s;
+    }
+  }
+  float conf = hit ? 1.0 : 0.0;
+  if (hit) {
+    if (uEdge == 1) { vec2 e = min(huv, 1.0 - huv); conf *= smoothstep(0.0, 0.08, min(e.x, e.y)); }
+    if (uFacing == 1) conf *= 1.0 - smoothstep(0.0, 0.55, R.z);
+    conf *= 1.0 - smoothstep(0.85, 1.0, tHit / uMaxDist);
+  }
+  o = vec4(huv, conf, steps / float(uSteps + uRefine));
+}`);
+
+const compProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uAlb, uNor, uDepth, uMat, uLit, uHit;
+uniform int uView, uSkyFb, uFresnel;
+uniform vec2 uOff, uSize, uTex, uTanHalf;
+uniform mat3 uInvRot;
+out vec4 o;
+${SKY}
+vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 tone(vec3 c){ return pow(aces(c * 0.8), vec3(1.0 / 2.2)); }
+vec3 heat(float t){
+  t = clamp(t, 0.0, 1.0) * 5.0;
+  vec3 c[6] = vec3[6](vec3(0.02,0.02,0.06), vec3(0.10,0.20,0.80), vec3(0.10,0.80,0.70), vec3(0.95,0.85,0.20), vec3(1.0,0.20,0.10), vec3(1.0));
+  int i = int(min(floor(t), 4.0)); return mix(c[i], c[i + 1], t - float(i));
+}
+void main(){
+  vec2 uv = (gl_FragCoord.xy - uOff) / uSize;
+  ivec2 p = clamp(ivec2(uv * uTex), ivec2(0), ivec2(uTex) - 1);
+  float d = texelFetch(uDepth, p, 0).r; bool bg = d > 9000.0;
+  vec3 lit = texelFetch(uLit, p, 0).rgb;
+  vec3 N = normalize(texelFetch(uNor, p, 0).xyz * 2.0 - 1.0);
+  vec4 m = texelFetch(uMat, p, 0);
+  vec4 H = texture(uHit, uv);
+  bool traced = !bg && H.w >= 0.0 && m.r >= 0.01;
+  vec3 V = normalize(vec3((uv * 2.0 - 1.0) * uTanHalf, -1.0));
+  vec3 R = reflect(V, N);
+  float ndv = clamp(dot(N, -V), 0.0, 1.0);
+  float F0 = m.r, w = uFresnel == 1 ? F0 + (1.0 - F0) * pow(1.0 - ndv, 5.0) : F0;
+  w *= traced ? 1.0 : 0.0;
+  float travelPx = length((H.xy - uv) * uTex);
+  float lod = clamp(log2(max(1.0, m.g * travelPx * 0.6)), 0.0, 7.0);
+  vec3 hitCol = textureLod(uLit, H.xy, lod).rgb;
+  vec3 fb = uSkyFb == 1 ? sky(uInvRot * R) : lit;
+  vec3 refC = mix(fb, hitCol, H.z);
+  vec3 fin = mix(lit, refC, w);
+  vec3 col;
+  vec3 dimc = vec3(0.14, 0.15, 0.18);
+  if (uView == 0) col = tone(fin);
+  else if (uView == 1) col = bg ? vec3(0.0) : vec3(1.0 - clamp(d / 40.0, 0.0, 1.0));
+  else if (uView == 2) col = bg ? dimc : N * 0.5 + 0.5;
+  else if (uView == 3) col = tone(lit);
+  else if (uView == 4) col = traced ? (H.z > 0.0 ? vec3(H.xy, 0.0) * (0.35 + 0.65 * H.z) : vec3(0.0)) : dimc;
+  else if (uView == 5) col = traced ? heat(H.w) : dimc * 0.6;
+  else if (uView == 6) col = traced ? vec3(H.z) : dimc;
+  else col = traced ? tone(refC * w) : vec3(0.0);
+  o = vec4(col, 1.0);
+}`);
+
+// ---------- meshes ----------
+function mesh(pos, nor, idx) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  if (nor) { const n = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, n); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nor), gl.STATIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0); }
+  let count = 0;
+  if (idx) { const i = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW); count = idx.length; }
+  gl.bindVertexArray(null);
+  return { vao, count };
+}
+function cube() {
+  const P = [], N = [], I = [];
+  [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]].forEach((n, f) => {
+    const u = n[1] !== 0 ? [1, 0, 0] : [0, 1, 0], v = V3.cross(n, u);
+    const q = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [0.5 * (n[0] + a * u[0] + b * v[0]), 0.5 * (n[1] + a * u[1] + b * v[1]), 0.5 * (n[2] + a * u[2] + b * v[2])]);
+    q.forEach(p => { P.push(...p); N.push(...n); });
+    const o = f * 4, cr = V3.cross(V3.sub(q[1], q[0]), V3.sub(q[2], q[0]));
+    if (V3.dot(cr, n) > 0) I.push(o, o + 1, o + 2, o, o + 2, o + 3); else I.push(o, o + 2, o + 1, o, o + 3, o + 2);
+  });
+  return mesh(P, N, I);
+}
+function sphere(seg, rings) {
+  const P = [], I = [];
+  for (let r = 0; r <= rings; r++) { const th = Math.PI * r / rings; for (let s = 0; s <= seg; s++) { const ph = 2 * Math.PI * s / seg; P.push(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)); } }
+  const W = seg + 1;
+  for (let r = 0; r < rings; r++) for (let s = 0; s < seg; s++) { const a = r * W + s, b = a + W; I.push(a, a + 1, b, a + 1, b + 1, b); }
+  return mesh(P, P, I);
+}
+const cubeM = cube(), ballM = sphere(40, 24), quad = mesh([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], null, null);
+
+// ---------- scene: [mesh, pos, rot, scale, albedo, reflectivity, roughness, emissive] ----------
+const objs = [];
+const add = (m, t, r, s, c, refl = 0, rough = 1, emis = 0, checker = 0) => { const o = { mesh: m, t, r, s, c: lin(c), refl, rough, emis, checker, M: M.trs(t, r, s) }; objs.push(o); return o; };
+const floor = add(cubeM, [0, -0.1, 0], [0, 0, 0], [60, 0.2, 60], [0.42, 0.43, 0.46], 0.55, 0.06, 0, 1);
+add(cubeM, [0, 3, -8.1], [0, 0, 0], [26, 6, 0.2], [0.70, 0.68, 0.64]);
+add(cubeM, [0, 2.0, -7.9], [0, 0, 0], [7, 3.2, 0.15], [0.06, 0.06, 0.07], 0.95, 0.0);
+[[-7, [0.88, 0.22, 0.16]], [-4.6, [0.95, 0.58, 0.12]], [4.6, [0.22, 0.78, 0.34]], [7, [0.22, 0.42, 0.92]]].forEach(([x, c]) => add(cubeM, [x, 1.6, -5], [0, 0.3, 0], [1, 3.2, 1], c, 0.05, 0.5));
+add(ballM, [-1.6, 0.8, -2.4], [0, 0, 0], [0.8, 0.8, 0.8], [0.85, 0.20, 0.18], 0.1, 0.3);
+add(ballM, [1.9, 0.6, -0.8], [0, 0, 0], [0.6, 0.6, 0.6], [0.20, 0.45, 0.90], 0.1, 0.3);
+add(cubeM, [-9.5, 1.6, -4], [0, 0, 0], [0.2, 2.6, 3], [0.25, 0.85, 1.0], 0, 1, 1);
+add(cubeM, [9.5, 1.3, -3], [0, 0, 0], [0.2, 2.2, 2.6], [1.0, 0.32, 0.80], 0, 1, 1);
+add(cubeM, [3.2, 1.5, 1.2], [0, 0, 0], [0.07, 3, 0.07], [0.92, 0.92, 0.92]);
+add(cubeM, [-3.4, 0.15, 1.4], [0, 0.2, 0], [2.2, 0.3, 1.0], [0.62, 0.62, 0.66], 0.1, 0.4);
+const spinner = add(cubeM, [0, 1.7, -4.2], [0.4, 0.5, 0], [1, 1, 1], [0.95, 0.80, 0.25], 0.05, 0.4);
+
+// ---------- textures ----------
+const noiseTex = gl.createTexture();
+{
+  const order = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5], d = new Float32Array(64);
+  order.forEach((v, i) => { d[i * 4] = (v + 0.5) / 16; d[i * 4 + 3] = 1; });
+  gl.bindTexture(gl.TEXTURE_2D, noiseTex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, 4, 4);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4, 4, gl.RGBA, gl.FLOAT, d);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+}
+let W = 0, H = 0, SW = 0, SH = 0, T = null, halfNow = null, litLevels = 1;
+function tex(fmt, w, h, filter, levels = 1) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, levels, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter === gl.LINEAR_MIPMAP_LINEAR ? gl.LINEAR : filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function fbo(colors, depth) {
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  colors.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  if (depth) gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+  gl.drawBuffers(colors.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("framebuffer incomplete");
+  return f;
+}
+function makeTargets() {
+  if (T) for (const k in T) { const o = T[k]; if (o instanceof WebGLTexture) gl.deleteTexture(o); else if (o instanceof WebGLFramebuffer) gl.deleteFramebuffer(o); else if (o instanceof WebGLRenderbuffer) gl.deleteRenderbuffer(o); }
+  const t = {};
+  SW = state.half ? Math.max(1, W >> 1) : W; SH = state.half ? Math.max(1, H >> 1) : H; halfNow = state.half;
+  litLevels = Math.floor(Math.log2(Math.max(W, H))) + 1;
+  t.alb = tex(gl.RGBA8, W, H, gl.NEAREST); t.nor = tex(gl.RGBA8, W, H, gl.NEAREST); t.z = tex(gl.R32F, W, H, gl.NEAREST); t.mat = tex(gl.RGBA8, W, H, gl.NEAREST);
+  t.depth = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, t.depth); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, W, H);
+  t.g = fbo([t.alb, t.nor, t.z, t.mat], t.depth);
+  t.lit = tex(gl.RGBA16F, W, H, gl.LINEAR_MIPMAP_LINEAR, litLevels); t.fLit = fbo([t.lit]);
+  t.hit = tex(gl.RGBA32F, SW, SH, gl.NEAREST); t.fHit = fbo([t.hit]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  T = t;
+  $("sRes").textContent = `${SW}×${SH}${state.half ? " (half)" : ""}`;
+}
+let rectsDirty = true;
+const ov = $("ov"), og = ov.getContext("2d");
+function resize() {
+  const w = Math.max(1, Math.round(canvas.clientWidth)), h = Math.max(1, Math.round(canvas.clientHeight));
+  if (w !== W || h !== H || halfNow !== state.half) {
+    W = w; H = h; canvas.width = w; canvas.height = h; makeTargets(); stripEl.style.setProperty("--ar", (w / h).toFixed(3)); rectsDirty = true;
+    const dpr = window.devicePixelRatio || 1; ov.width = w * dpr; ov.height = h * dpr; og.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  if (rectsDirty) {
+    rectsDirty = false;
+    const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+    for (const t of thumbs) { const r = t.el.getBoundingClientRect(); t.rect = [Math.round((r.left - cr.left + 1) * sx), Math.round((cr.bottom - r.bottom + 1) * sy), Math.round((r.width - 2) * sx), Math.round((r.height - 2) * sy)]; }
+  }
+}
+window.addEventListener("resize", () => rectsDirty = true);
+
+// ---------- camera + probe input ----------
+const cam = { yaw: 1.32, pitch: 0.2, dist: 11, tgt: [0, 1.0, -2.5] };
+const camDefault = JSON.stringify(cam);
+let drag = null; const pointers = new Map();
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pan: e.button === 2 || e.shiftKey, button: e.button }; });
+canvas.addEventListener("pointerup", e => {
+  if (drag && drag.button === 0 && pointers.size === 1 && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) {
+    const r = canvas.getBoundingClientRect(); state.probe = [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height];
+  }
+  pointers.delete(e.pointerId); if (!pointers.size) drag = null;
+});
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [c, d] = [...pointers.values()]; const d1 = Math.hypot(c[0] - d[0], c[1] - d[1]);
+    if (d0 > 0 && d1 > 0) cam.dist = Math.min(40, Math.max(2, cam.dist * d0 / d1));
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) { const s = cam.dist * 0.0016, cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw); cam.tgt[0] += sy * dx * s; cam.tgt[2] -= cy * dx * s; cam.tgt[1] = Math.max(0.1, cam.tgt[1] + dy * s); }
+  else { cam.yaw += dx * 0.006; cam.pitch = Math.max(0.02, Math.min(1.5, cam.pitch + dy * 0.006)); }
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(40, Math.max(2, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+$("reset").addEventListener("click", () => Object.assign(cam, JSON.parse(camDefault)));
+
+// ---------- timers ----------
+const timers = {};
+function tBegin(name) { if (!timerExt) return false; const t = timers[name] || (timers[name] = { q: null, ms: null }); if (t.q) return false; t.q = gl.createQuery(); gl.beginQuery(timerExt.TIME_ELAPSED_EXT, t.q); return true; }
+function tEnd(s) { if (s) gl.endQuery(timerExt.TIME_ELAPSED_EXT); }
+function tPoll() {
+  if (!timerExt) return; const dj = gl.getParameter(timerExt.GPU_DISJOINT_EXT);
+  for (const k in timers) { const t = timers[k]; if (t.q && gl.getQueryParameter(t.q, gl.QUERY_RESULT_AVAILABLE)) { if (!dj) { const ms = gl.getQueryParameter(t.q, gl.QUERY_RESULT) / 1e6; t.ms = t.ms == null ? ms : t.ms * 0.85 + ms * 0.15; } gl.deleteQuery(t.q); t.q = null; } }
+}
+const msTxt = k => !timerExt ? "n/a in this browser" : (timers[k] && timers[k].ms != null) ? timers[k].ms.toFixed(2) + " ms" : "measuring…";
+
+// ---------- frame ----------
+const FOV = 0.95, NEAR = 0.05;
+function bindTex(unit, t) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); }
+const probeBuf = new Float32Array(4);
+let frame = 0, fpsT = performance.now(), fpsN = 0, fps = 0, simT = 0, last = performance.now();
+function render(now) {
+  requestAnimationFrame(render);
+  fpsN++; if (now - fpsT > 500) { fps = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; }
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  resize(); tPoll();
+  if (state.anim) { simT += dt; spinner.r = [simT * 0.6, simT * 0.8, 0.2]; spinner.M = M.trs(spinner.t, spinner.r, spinner.s); }
+  floor.refl = state.refl; floor.rough = state.rough;
+  const eye = [cam.tgt[0] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), cam.tgt[1] + cam.dist * Math.sin(cam.pitch), cam.tgt[2] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw)];
+  const view = M.lookAt(eye, cam.tgt, [0, 1, 0]), proj = M.persp(FOV, W / H, NEAR, 300);
+  const th = Math.tan(FOV / 2), tanHalf = [th * W / H, th], invRot = M.invRot3(view);
+  gl.disable(gl.BLEND);
+
+  // 1) G-buffer + 2) lighting
+  const tg = tBegin("g");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.g); gl.viewport(0, 0, W, H);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 1, [0.5, 0.5, 1, 0]); gl.clearBufferfv(gl.COLOR, 2, [10000, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 3, [0, 0, 0, 0]); gl.clearBufferfv(gl.DEPTH, 0, [1]);
+  gl.useProgram(gbufProg.p);
+  gl.uniformMatrix4fv(gbufProg.u.uView, false, view); gl.uniformMatrix4fv(gbufProg.u.uProj, false, proj);
+  for (const o of objs) {
+    gl.uniformMatrix4fv(gbufProg.u.uModel, false, o.M); gl.uniform3fv(gbufProg.u.uColor, o.c); gl.uniform3f(gbufProg.u.uMat, o.refl, o.rough, o.emis); gl.uniform1i(gbufProg.u.uChecker, o.checker);
+    gl.bindVertexArray(o.mesh.vao); gl.drawElements(gl.TRIANGLES, o.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.bindVertexArray(quad.vao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.fLit); gl.useProgram(lightProg.p);
+  bindTex(0, T.alb); bindTex(1, T.nor); bindTex(2, T.z); bindTex(3, T.mat); bindTex(4, null); bindTex(5, null);
+  const lu = lightProg.u;
+  gl.uniform1i(lu.uAlb, 0); gl.uniform1i(lu.uNor, 1); gl.uniform1i(lu.uDepth, 2); gl.uniform1i(lu.uMat, 3);
+  gl.uniform3fv(lu.uSunV, M.dir(view, V3.norm([0.4, 0.8, 0.3]))); gl.uniform3fv(lu.uUpV, M.dir(view, [0, 1, 0]));
+  gl.uniformMatrix3fv(lu.uInvRot, false, invRot); gl.uniform2f(lu.uTanHalf, tanHalf[0], tanHalf[1]); gl.uniform2f(lu.uSize, W, H);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); bindTex(4, T.lit); gl.generateMipmap(gl.TEXTURE_2D);
+  tEnd(tg);
+
+  // 3) SSR trace
+  const ts = tBegin("ssr");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.fHit); gl.viewport(0, 0, SW, SH); gl.useProgram(ssrProg.p);
+  bindTex(0, T.z); bindTex(1, T.nor); bindTex(2, T.mat); bindTex(3, noiseTex);
+  const su = ssrProg.u;
+  gl.uniform1i(su.uDepth, 0); gl.uniform1i(su.uNor, 1); gl.uniform1i(su.uMat, 2); gl.uniform1i(su.uNoise, 3);
+  gl.uniformMatrix4fv(su.uProj, false, proj); gl.uniform2f(su.uSize, SW, SH); gl.uniform2f(su.uTanHalf, tanHalf[0], tanHalf[1]);
+  gl.uniform1i(su.uTech, state.tech); gl.uniform1i(su.uSteps, state.steps); gl.uniform1i(su.uRefine, state.refine); gl.uniform1i(su.uJitter, state.jitter ? 1 : 0);
+  gl.uniform1i(su.uEdge, state.edge ? 1 : 0); gl.uniform1i(su.uFacing, state.facing ? 1 : 0);
+  gl.uniform1f(su.uStepLen, state.stepLen); gl.uniform1f(su.uStride, state.stride); gl.uniform1f(su.uMaxDist, state.maxDist); gl.uniform1f(su.uThick, state.thick); gl.uniform1f(su.uNear, NEAR);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  tEnd(ts);
+  let probeHit = null;
+  if (state.probe) {
+    const px = Math.min(SW - 1, Math.floor(state.probe[0] * SW)), py = Math.min(SH - 1, Math.floor(state.probe[1] * SH));
+    gl.readPixels(px, py, 1, 1, gl.RGBA, gl.FLOAT, probeBuf); probeHit = Array.from(probeBuf);
+  }
+
+  // 4) composite + thumbnails
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.useProgram(compProg.p);
+  bindTex(0, T.alb); bindTex(1, T.nor); bindTex(2, T.z); bindTex(3, T.mat); bindTex(4, T.lit); bindTex(5, T.hit);
+  const cu = compProg.u;
+  gl.uniform1i(cu.uAlb, 0); gl.uniform1i(cu.uNor, 1); gl.uniform1i(cu.uDepth, 2); gl.uniform1i(cu.uMat, 3); gl.uniform1i(cu.uLit, 4); gl.uniform1i(cu.uHit, 5);
+  gl.uniform1i(cu.uSkyFb, state.sky ? 1 : 0); gl.uniform1i(cu.uFresnel, state.fresnel ? 1 : 0);
+  gl.uniform2f(cu.uTex, W, H); gl.uniform2f(cu.uTanHalf, tanHalf[0], tanHalf[1]); gl.uniformMatrix3fv(cu.uInvRot, false, invRot);
+  const comp = (v, x, y, w, h) => { gl.viewport(x, y, w, h); gl.uniform1i(cu.uView, v); gl.uniform2f(cu.uOff, x, y); gl.uniform2f(cu.uSize, w, h); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); };
+  comp(state.view, 0, 0, W, H);
+  if (state.strip) for (const t of thumbs) { const [x, y, w, h] = t.rect || [0, 0, 0, 0]; if (w > 4 && h > 4) comp(t.v, x, y, w, h); }
+
+  drawProbe(probeHit);
+  if (frame++ % 15 === 0) {
+    $("hudTime").innerHTML = `<b>${fps.toFixed(0)} fps</b>` + (timerExt ? ` · SSR ${msTxt("ssr")}` : "");
+    $("gG").textContent = msTxt("g"); $("gS").textContent = msTxt("ssr");
+    $("sWorst").textContent = `${((state.steps + state.refine) * SW * SH / 1e6).toFixed(1)} M per frame`;
+  }
+}
+
+// 2D overlay for the probe
+function drawProbe(h) {
+  const cw = canvas.clientWidth, ch = canvas.clientHeight;
+  og.clearRect(0, 0, cw, ch);
+  if (!state.probe) { $("hudProbe").textContent = "click a reflective pixel to probe its ray"; $("sProbe").textContent = "–"; return; }
+  const sx = state.probe[0] * cw, sy = (1 - state.probe[1]) * ch;
+  og.lineWidth = 2;
+  if (!h || h[3] < 0) {
+    og.strokeStyle = "#8a93a3"; og.beginPath(); og.arc(sx, sy, 7, 0, Math.PI * 2); og.stroke();
+    $("hudProbe").innerHTML = "probe: <b>not reflective</b>, no ray traced"; $("sProbe").textContent = "not reflective"; return;
+  }
+  const maxS = state.steps + state.refine, steps = Math.round(h[3] * maxS);
+  if (h[2] <= 0) {
+    og.strokeStyle = "#ff6a5a"; og.beginPath(); og.moveTo(sx - 7, sy - 7); og.lineTo(sx + 7, sy + 7); og.moveTo(sx + 7, sy - 7); og.lineTo(sx - 7, sy + 7); og.stroke();
+    const why = state.sky ? "falls back to sky" : "no reflection";
+    $("hudProbe").innerHTML = `probe: <b>miss</b> after ${steps} steps · ${why}`; $("sProbe").textContent = `miss, ${steps} steps`; return;
+  }
+  const hx = h[0] * cw, hy = (1 - h[1]) * ch;
+  og.strokeStyle = "rgba(255,211,77,.95)"; og.setLineDash([6, 4]); og.beginPath(); og.moveTo(sx, sy); og.lineTo(hx, hy); og.stroke(); og.setLineDash([]);
+  og.fillStyle = "#ffd34d"; og.beginPath(); og.arc(sx, sy, 5, 0, Math.PI * 2); og.fill();
+  og.strokeStyle = "#4fd1c5"; og.lineWidth = 2.5; og.beginPath(); og.arc(hx, hy, 7, 0, Math.PI * 2); og.stroke();
+  $("hudProbe").innerHTML = `probe: <b>hit</b> after ${steps} steps · confidence ${h[2].toFixed(2)} · borrows pixel (${Math.round(h[0] * W)}, ${Math.round(h[1] * H)})`;
+  $("sProbe").textContent = `hit, ${steps} steps, conf ${h[2].toFixed(2)}`;
+}
+
+syncTech(); setView(0);
+for (const k in fmt) $(k + "V").textContent = fmt[k](state[k]);
+try { resize(); requestAnimationFrame(render); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

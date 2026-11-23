@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deferred Light Volumes Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport on the left, instrument panel on the right; stacks on narrow screens. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #f2a93b;
+  --good: #46d27f;
+  --bad: #ff5a4a;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 340px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.78); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 132px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.legend2 { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend2 span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; background: var(--c); }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.modes { display: flex; flex-direction: column; gap: 6px; }
+.mode { display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; }
+.mode:hover { border-color: #3a4150; }
+.mode input { margin: 3px 0 0; accent-color: var(--accent); }
+.mode .t { font-weight: 500; }
+.mode .d { grid-column: 2; color: var(--muted); font-size: 12px; }
+.mode:has(input:checked) { border-color: var(--accent); background: rgba(242,169,59,.07); }
+.explain { font-size: 13px; color: var(--text); background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 10px; }
+.row { display: grid; grid-template-columns: 96px 1fr 44px; align-items: center; gap: 8px; margin: 6px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+button { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stats { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 12.5px; }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.bar { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: #0f1217; overflow: hidden; display: flex; margin: 4px 0 2px; }
+.bar i { display: block; height: 100%; }
+.legend { grid-column: 1 / -1; display: flex; gap: 14px; font-size: 11.5px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; background: var(--c); }
+.heatkey { height: 10px; border-radius: 3px; background: linear-gradient(90deg, #05050f, #1a33cc, #1acbb3, #f2d933, #ff3319, #ffffff); margin-top: 4px; }
+.heatlbl { display: flex; justify-content: space-between; font: 11px var(--font-mono); color: var(--muted); }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 60vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL deferred shading scene"></canvas>
+    <div class="hud" id="hud">
+      <span class="chip" id="hudMode">mode</span>
+      <span class="chip" id="hudCost">cost</span>
+      <span class="chip" id="hudTime">GPU</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll or pinch to zoom · right-drag to pan</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Light volumes in deferred shading</h1>
+      <p class="sub">A real G-buffer + additive lighting pass in WebGL 2. Every number below is measured on your GPU each frame.</p>
+    </div>
+
+    <section>
+      <h2>How each light picks its pixels</h2>
+      <div class="modes" id="modes"></div>
+      <div class="explain" id="explain"></div>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <select id="view">
+        <option value="0">Final image</option>
+        <option value="7">Light spheres over the scene</option>
+        <option value="8">Light #1 footprint: A / B / C</option>
+        <option value="5">Cost heatmap (light shader runs per pixel)</option>
+        <option value="6">Useful vs wasted runs</option>
+        <option value="4">Lighting buffer only</option>
+        <option value="1">G-buffer: albedo</option>
+        <option value="2">G-buffer: view-space normals</option>
+        <option value="3">G-buffer: depth</option>
+      </select>
+      <div id="heatLegend" style="margin-top:8px; display:none">
+        <div class="heatkey"></div>
+        <div class="heatlbl"><span>0</span><span id="heatMaxLbl">8 runs</span></div>
+      </div>
+      <div id="uwLegend" class="legend2" style="display:none">
+        <span style="--c:#40d973">useful run: surface within the light's radius</span>
+        <span style="--c:#ff4d38">wasted run: out of range or empty background</span>
+      </div>
+      <div id="abcLegend" class="legend2" style="display:none">
+        <span style="--c:#40e070">B: inside the sphere, gets lit (stencil passes)</span>
+        <span style="--c:#ff5a40">A: in front of the sphere (only stencil rejects it)</span>
+        <span style="--c:#4d80ff">C: behind the sphere (depth test rejects it)</span>
+        <span style="--c:#161a2e">empty sky inside the footprint</span>
+      </div>
+      <div id="sphLegend" class="legend2" style="display:none">
+        <span style="--c:var(--accent)">Bright rings mark where a light volume cuts through a surface. Only the surface inside each ring is lit.</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Lights</h2>
+      <div class="row"><label for="count">Count</label><input id="count" type="range" min="1" max="256" value="64"><output id="countV">64</output></div>
+      <div class="row"><label for="radius">Radius (m)</label><input id="radius" type="range" min="1" max="10" step="0.1" value="4"><output id="radiusV">4.0</output></div>
+      <div class="row"><label for="intensity">Intensity</label><input id="intensity" type="range" min="0.5" max="12" step="0.1" value="4"><output id="intensityV">4.0</output></div>
+      <div class="row"><label for="heat">Heat scale</label><input id="heat" type="range" min="2" max="64" step="1" value="8"><output id="heatV">8</output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="animate" checked> Animate lights</label>
+        <label><input type="checkbox" id="solo"> Solo: only light #1</label>
+        <label><input type="checkbox" id="stripOn" checked> Show pipeline stages under the scene</label>
+      </div>
+      <div class="row" style="margin-top:8px"><label for="wire">Volumes</label>
+        <select id="wire" style="grid-column: span 2">
+          <option value="0" selected>Hidden</option>
+          <option value="1">Wireframe (occluded by scene)</option>
+          <option value="2">Wireframe (x-ray)</option>
+        </select>
+      </div>
+      <div class="btns">
+        <button id="inside" type="button">Put camera inside light #1</button>
+        <button id="reset" type="button">Reset camera</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Measured this frame</h2>
+      <dl class="stats">
+        <dt>Pixels</dt><dd id="sPix">–</dd>
+        <dt>Light shader runs</dt><dd id="sRuns">–</dd>
+        <dt>Equivalent full-screen passes</dt><dd id="sPasses">–</dd>
+        <dt>Full-screen-quad baseline</dt><dd id="sBase">–</dd>
+        <div class="bar"><i id="bUse" style="background:var(--good);width:0"></i><i id="bWaste" style="background:var(--bad);width:0"></i></div>
+        <div class="legend"><span style="--c:var(--good)" id="lUse">useful –</span><span style="--c:var(--bad)" id="lWaste">wasted –</span></div>
+        <dt>GPU time, lighting pass</dt><dd id="sGpu">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Set View to <b>Cost heatmap</b>, then step through modes 1 → 5 and watch the runs count drop.</li>
+        <li>Turn on <b>Solo</b>, set Volumes to <b>x-ray</b> and View to <b>Useful vs wasted</b>. In mode 3, the red parts of the footprint are surfaces in front of or behind the sphere.</li>
+        <li>Click the thumbnails under the scene to see each stage full size. Stage 5 splits light #1's footprint into the A/B/C cases.</li>
+        <li>Pick mode 2, press <b>Put camera inside light #1</b>, then switch to mode 3. Mode 2's light vanishes because its front faces are behind the camera.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+// ---------- UI data ----------
+const MODES = [
+  { t: "Full-screen quad per light", d: "No culling. Every pixel runs every light.",
+    x: "Each light draws a quad covering the whole screen. The shader computes the distance and outputs zero for pixels out of range, but it still runs. Cost = pixels × lights, so this is the baseline every other mode is measured against." },
+  { t: "Sphere, front faces", d: "Rasterizer culls by 2D footprint. Breaks with camera inside.",
+    x: "The light is drawn as a sphere mesh, so only pixels inside its screen outline run the shader. Drawing front faces has a bug: when the camera is inside the sphere, the front faces are behind the camera and you only see the inside (back faces), so nothing is drawn and the light disappears." },
+  { t: "Sphere, back faces", d: "Same footprint, and it works from inside the light.",
+    x: "Drawing back faces (cull front) fixes the camera-inside case, because the far side of the sphere is always in front of the camera. But the footprint is 2D: surfaces far in front of or behind the sphere still run the shader for nothing." },
+  { t: "Back faces + depth test", d: "GEQUAL vs scene depth. Rejects surfaces behind the light.",
+    x: "Back faces are depth-tested with GEQUAL against the G-buffer depth. A pixel passes only if its surface is in front of the sphere's far side, so surfaces behind the light (walls, floor far away) are rejected by the hardware before shading. Surfaces in front of the light still slip through." },
+  { t: "Stencil two-pass", d: "Rejects surfaces in front of and behind the volume.",
+    x: "Pass 1 draws the sphere with color off: back faces that fail depth do +1, front faces that fail depth do −1. Only surfaces inside the sphere end up with stencil ≠ 0. Pass 2 runs the lighting shader where stencil ≠ 0. Almost no wasted runs, at the price of an extra draw and stencil clear per light." }
+];
+const modesEl = document.getElementById("modes");
+MODES.forEach((m, i) => {
+  const lab = document.createElement("label");
+  lab.className = "mode";
+  lab.innerHTML = `<input type="radio" name="mode" id="mode${i}" value="${i}" ${i === 2 ? "checked" : ""}><span class="t">${i + 1}. ${m.t}</span><span class="d">${m.d}</span>`;
+  modesEl.appendChild(lab);
+});
+const $ = id => document.getElementById(id);
+const state = { mode: 2, view: 0, count: 64, radius: 4, intensity: 4, heat: 8, animate: true, solo: false, wire: 0, strip: true };
+const STAGES = [[1, "1 Albedo"], [2, "2 Normals"], [3, "3 Depth"], [7, "4 Light spheres"], [8, "5 Light #1 A/B/C"], [5, "6 Shader runs"], [4, "7 Light buffer"], [0, "8 Final"]];
+const stripEl = document.getElementById("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+function setView(v) {
+  state.view = v; document.getElementById("view").value = String(v);
+  thumbs.forEach(t => t.el.classList.toggle("on", t.v === v));
+  const show = (id, on) => document.getElementById(id).style.display = on ? "" : "none";
+  show("heatLegend", v === 5); show("uwLegend", v === 6); show("abcLegend", v === 8); show("sphLegend", v === 7);
+}
+setView(0);
+function syncExplain() { $("explain").textContent = MODES[state.mode].x; $("hudMode").innerHTML = `mode <b>${state.mode + 1}</b> · ${MODES[state.mode].t}`; }
+modesEl.addEventListener("change", e => { state.mode = +e.target.value; syncExplain(); });
+$("view").addEventListener("change", e => setView(+e.target.value));
+for (const k of ["count", "radius", "intensity", "heat"]) {
+  const el = $(k), out = $(k + "V");
+  el.addEventListener("input", () => {
+    state[k] = +el.value;
+    out.textContent = (k === "radius" || k === "intensity") ? (+el.value).toFixed(1) : el.value;
+    if (k === "heat") $("heatMaxLbl").textContent = el.value + " runs";
+  });
+}
+$("animate").addEventListener("change", e => state.animate = e.target.checked);
+$("solo").addEventListener("change", e => state.solo = e.target.checked);
+$("wire").addEventListener("change", e => state.wire = +e.target.value);
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; });
+syncExplain();
+
+// ---------- math ----------
+const M = {
+  persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; },
+  lookAt(e, c, u) {
+    let zx = e[0] - c[0], zy = e[1] - c[1], zz = e[2] - c[2]; let l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;
+    let xx = u[1] * zz - u[2] * zy, xy = u[2] * zx - u[0] * zz, xz = u[0] * zy - u[1] * zx; l = Math.hypot(xx, xy, xz); xx /= l; xy /= l; xz /= l;
+    const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+    return new Float32Array([xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0, -(xx * e[0] + xy * e[1] + xz * e[2]), -(yx * e[0] + yy * e[1] + yz * e[2]), -(zx * e[0] + zy * e[1] + zz * e[2]), 1]);
+  },
+  model(tx, ty, tz, sx, sy, sz) { return new Float32Array([sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, tx, ty, tz, 1]); },
+  xform(m, x, y, z) { return [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]]; }
+};
+function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+function hsv(h, s, v) { const f = n => { const k = (n + h * 6) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); }; return [f(5), f(3), f(1)]; }
+const lin = c => Math.pow(c, 2.2);
+
+// ---------- GL setup ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: false, depth: false, stencil: false, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+if (!gl.getExtension("EXT_color_buffer_float")) { fail("This demo needs the EXT_color_buffer_float WebGL extension (float render targets), which your GPU doesn't expose."); throw new Error("no float rt"); }
+const timerExt = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + "\n" + src); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+
+const sceneProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNor;
+uniform mat4 uModel, uView, uProj;
+out vec3 vPosV; out vec3 vNorV; out vec3 vWorld;
+void main(){
+  vec4 w = uModel * vec4(aPos,1.0); vWorld = w.xyz;
+  vec4 pv = uView * w; vPosV = pv.xyz;
+  mat3 mv = mat3(uView * uModel);
+  vNorV = transpose(inverse(mv)) * aNor;
+  gl_Position = uProj * pv;
+}`, `#version 300 es
+precision highp float;
+in vec3 vPosV; in vec3 vNorV; in vec3 vWorld;
+uniform vec3 uColor; uniform int uChecker;
+layout(location=0) out vec4 oAlbedo; layout(location=1) out vec4 oNormal; layout(location=2) out vec4 oPos;
+void main(){
+  vec3 c = uColor;
+  if (uChecker == 1) { float k = mod(floor(vWorld.x) + floor(vWorld.z), 2.0); c *= mix(0.72, 1.0, k); }
+  oAlbedo = vec4(c, 1.0);
+  oNormal = vec4(normalize(vNorV), 1.0);
+  oPos = vec4(vPosV, 1.0);
+}`);
+
+const lightVS = `#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uView, uProj; uniform vec3 uLightW; uniform float uRadius; uniform int uFullscreen;
+void main(){
+  if (uFullscreen == 1) { gl_Position = vec4(aPos.xy, 0.0, 1.0); return; }
+  vec3 w = uLightW + aPos * uRadius * 1.04;
+  gl_Position = uProj * uView * vec4(w, 1.0);
+}`;
+const lightProg = program(lightVS, `#version 300 es
+precision highp float;
+uniform sampler2D uAlbedo, uNormal, uPos;
+uniform vec3 uLightV, uLightColor; uniform float uRadius, uIntensity;
+layout(location=0) out vec4 oLight; layout(location=1) out vec4 oCost;
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 P = texelFetch(uPos, p, 0);
+  oLight = vec4(0.0); oCost = vec4(1.0, 1.0, 0.0, 0.0);
+  if (P.a < 0.5) return;
+  vec3 L = uLightV - P.xyz; float d = length(L);
+  if (d >= uRadius) return;
+  oCost = vec4(1.0, 0.0, 0.0, 0.0);
+  vec3 N = normalize(texelFetch(uNormal, p, 0).xyz);
+  vec3 A = texelFetch(uAlbedo, p, 0).rgb;
+  L /= d;
+  float ndl = max(dot(N, L), 0.0);
+  vec3 V = normalize(-P.xyz); vec3 H = normalize(L + V);
+  float spec = pow(max(dot(N, H), 0.0), 48.0) * 0.5;
+  float x = d / uRadius; float win = clamp(1.0 - x*x*x*x, 0.0, 1.0); win *= win;
+  float att = win / (1.0 + d * d);
+  oLight = vec4(uLightColor * (A + spec) * ndl * att * uIntensity, 0.0);
+}`);
+const stencilProg = program(lightVS, `#version 300 es
+precision mediump float; out vec4 o; void main(){ o = vec4(0.0); }`);
+
+const compProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; void main(){ gl_Position = vec4(aPos.xy, 0.0, 1.0); }`, `#version 300 es
+precision highp float;
+uniform sampler2D uAlbedo, uNormal, uPos, uLight, uCost, uSpheres, uMask;
+uniform int uView; uniform float uHeat, uFar; uniform vec2 uOff, uSize, uTex;
+out vec4 o;
+vec3 heat(float t){
+  t = clamp(t, 0.0, 1.0) * 5.0;
+  vec3 c[6] = vec3[6](vec3(0.02,0.02,0.06), vec3(0.10,0.20,0.80), vec3(0.10,0.80,0.70), vec3(0.95,0.85,0.20), vec3(1.0,0.20,0.10), vec3(1.0));
+  int i = int(min(floor(t), 4.0)); return mix(c[i], c[i+1], t - float(i));
+}
+vec3 tone(vec3 c){ c = c / (1.0 + c); return pow(c, vec3(1.0/2.2)); }
+void main(){
+  vec2 uv = (gl_FragCoord.xy - uOff) / uSize;
+  ivec2 p = clamp(ivec2(uv * uTex), ivec2(0), ivec2(uTex) - 1);
+  vec3 A = texelFetch(uAlbedo, p, 0).rgb;
+  vec3 N = texelFetch(uNormal, p, 0).xyz;
+  vec4 P = texelFetch(uPos, p, 0);
+  vec3 Lt = texelFetch(uLight, p, 0).rgb;
+  vec2 C = texelFetch(uCost, p, 0).rg;
+  bool bg = P.a < 0.5;
+  vec3 bgc = vec3(0.035, 0.04, 0.05);
+  vec3 fin = bg ? bgc : tone(A * 0.03 + Lt);
+  vec3 col;
+  if (uView == 0) col = fin;
+  else if (uView == 1) col = bg ? bgc : pow(A, vec3(1.0/2.2));
+  else if (uView == 2) col = bg ? bgc : normalize(N) * 0.5 + 0.5;
+  else if (uView == 3) col = bg ? vec3(1.0) : vec3(pow(clamp(-P.z / uFar, 0.0, 1.0), 0.5));
+  else if (uView == 4) col = bg ? bgc : tone(Lt);
+  else if (uView == 5) {
+    float g = bg ? 0.0 : dot(fin, vec3(0.3, 0.5, 0.2)) * 0.18;
+    col = C.r > 0.0 ? heat(C.r / uHeat) : vec3(g);
+  } else if (uView == 7) {
+    vec4 S = texelFetch(uSpheres, p, 0);
+    vec3 base = bg ? bgc : vec3(dot(fin, vec3(0.3, 0.5, 0.2)) * 0.5);
+    col = base * (1.0 - S.a) + S.rgb;
+  } else if (uView == 8) {
+    vec3 K = texelFetch(uMask, p, 0).rgb;
+    float g = bg ? 0.02 : dot(fin, vec3(0.3, 0.5, 0.2)) * 0.22;
+    col = vec3(g);
+    if (bg) { if (K.r > 0.5) col = vec3(0.07, 0.08, 0.16); }
+    else if (K.b > 0.5) col = mix(col, vec3(0.25, 0.88, 0.44), 0.85);
+    else if (K.g > 0.5) col = mix(col, vec3(1.0, 0.35, 0.25), 0.85);
+    else if (K.r > 0.5) col = mix(col, vec3(0.30, 0.50, 1.0), 0.85);
+  } else {
+    float g = bg ? 0.02 : dot(fin, vec3(0.3, 0.5, 0.2)) * 0.22;
+    float useful = C.r - C.g;
+    col = vec3(g) + vec3(0.25, 0.85, 0.45) * clamp(useful / uHeat, 0.0, 1.0) + vec3(1.0, 0.30, 0.22) * clamp(C.g / uHeat, 0.0, 1.0);
+  }
+  o = vec4(col, 1.0);
+}`);
+
+const wireProg = program(`#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uView, uProj; uniform vec3 uLightW; uniform float uRadius; uniform float uPoint;
+void main(){
+  vec3 w = uLightW + aPos * uRadius;
+  gl_Position = uProj * uView * vec4(w, 1.0);
+  gl_PointSize = uPoint;
+}`, `#version 300 es
+precision mediump float; uniform vec4 uColor; out vec4 o; void main(){ o = uColor; }`);
+
+const reduceProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; void main(){ gl_Position = vec4(aPos.xy, 0.0, 1.0); }`, `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; uniform ivec2 uSrcSize;
+out vec4 o;
+void main(){
+  ivec2 b = ivec2(gl_FragCoord.xy) * 4; vec4 s = vec4(0.0);
+  for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) {
+    ivec2 q = b + ivec2(i, j);
+    if (q.x < uSrcSize.x && q.y < uSrcSize.y) s += texelFetch(uSrc, q, 0);
+  }
+  o = s;
+}`);
+
+const maskProg = program(lightVS, `#version 300 es
+precision mediump float; out vec4 o; void main(){ o = vec4(1.0); }`);
+
+const sphereProg = program(`#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uView, uProj; uniform vec3 uLightW; uniform float uRadius;
+out vec3 vN; out vec3 vP;
+void main(){
+  vec4 v = uView * vec4(uLightW + aPos * uRadius * 1.04, 1.0);
+  vP = v.xyz; vN = mat3(uView) * aPos;
+  gl_Position = uProj * v;
+}`, `#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vP;
+uniform vec3 uColor; uniform sampler2D uPos;
+out vec4 o;
+void main(){
+  vec3 N = normalize(vN); vec3 V = normalize(-vP);
+  float rim = 1.0 - abs(dot(N, V));
+  float a = gl_FrontFacing ? 0.10 + 0.45 * rim * rim : 0.07;
+  vec3 c = uColor * (0.45 + 0.8 * rim);
+  vec4 P = texelFetch(uPos, ivec2(gl_FragCoord.xy), 0);
+  if (P.a > 0.5) { float ring = 1.0 - smoothstep(0.0, 0.12, abs(P.z - vP.z)); c += uColor * ring * 1.6; a = max(a, ring * 0.95); }
+  o = vec4(min(c, vec3(1.0)), a);
+}`);
+
+// ---------- meshes ----------
+function mesh(pos, nor, idx, lineIdx) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  if (nor) { const n = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, n); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nor), gl.STATIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0); }
+  let count = 0;
+  if (idx) { const i = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW); count = idx.length; }
+  gl.bindVertexArray(null);
+  let lines = null;
+  if (lineIdx) {
+    lines = gl.createVertexArray(); gl.bindVertexArray(lines);
+    gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    const li = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, li); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(lineIdx), gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+  }
+  return { vao, count, lines, lineCount: lineIdx ? lineIdx.length : 0 };
+}
+function cube() {
+  const P = [], N = [], I = [];
+  const faces = [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]];
+  faces.forEach((n, f) => {
+    const u = n[1] !== 0 ? [1, 0, 0] : [0, 1, 0];
+    const v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+    for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      P.push(0.5 * (n[0] + a * u[0] + b * v[0]), 0.5 * (n[1] + a * u[1] + b * v[1]), 0.5 * (n[2] + a * u[2] + b * v[2])); N.push(...n);
+    }
+    const o = f * 4; I.push(o, o + 1, o + 2, o, o + 2, o + 3);
+  });
+  // fix winding so all faces are CCW from outside
+  for (let f = 0; f < 6; f++) {
+    const o = f * 4, a = P.slice(o * 3, o * 3 + 3), b = P.slice((o + 1) * 3, (o + 1) * 3 + 3), c = P.slice((o + 2) * 3, (o + 2) * 3 + 3);
+    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    if (cr[0] * N[o * 3] + cr[1] * N[o * 3 + 1] + cr[2] * N[o * 3 + 2] < 0) { const k = f * 6; [I[k + 1], I[k + 2]] = [I[k + 2], I[k + 1]]; [I[k + 4], I[k + 5]] = [I[k + 5], I[k + 4]]; }
+  }
+  return mesh(P, N, I);
+}
+function sphere(seg, rings, withLines) {
+  const P = [], I = [], L = [];
+  for (let r = 0; r <= rings; r++) {
+    const th = Math.PI * r / rings;
+    for (let s = 0; s <= seg; s++) { const ph = 2 * Math.PI * s / seg; P.push(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)); }
+  }
+  const W = seg + 1;
+  for (let r = 0; r < rings; r++) for (let s = 0; s < seg; s++) {
+    const a = r * W + s, b = a + W;
+    I.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  if (withLines) {
+    for (let r = 1; r < rings; r += 2) for (let s = 0; s < seg; s++) L.push(r * W + s, r * W + s + 1);
+    for (let s = 0; s < seg; s += 2) for (let r = 0; r < rings; r++) L.push(r * W + s, (r + 1) * W + s);
+  }
+  return mesh(P, P, I, withLines ? L : null);
+}
+const cubeMesh = cube();
+const ballMesh = sphere(32, 20, false);
+const volMesh = sphere(20, 14, true);
+const quad = mesh([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], null, null);
+
+
+// ---------- scene ----------
+const R = rng(7);
+const objects = [];
+objects.push({ m: M.model(0, -0.1, 0, 44, 0.2, 44), c: [0.78, 0.76, 0.72], checker: 1, mesh: cubeMesh });
+const palette = [[0.85, 0.83, 0.80], [0.62, 0.66, 0.72], [0.78, 0.70, 0.60], [0.70, 0.74, 0.68]];
+for (let gx = -2; gx <= 2; gx++) for (let gz = -2; gz <= 2; gz++) {
+  const x = gx * 7.5 + (R() - 0.5) * 2, z = gz * 7.5 + (R() - 0.5) * 2;
+  const col = palette[Math.floor(R() * palette.length)];
+  if (R() < 0.65) { const h = 1 + R() * 5, w = 0.8 + R() * 1.6; objects.push({ m: M.model(x, h / 2, z, w, h, w), c: col, checker: 0, mesh: cubeMesh }); }
+  else { const r = 0.6 + R() * 0.9; objects.push({ m: M.model(x, r, z, r, r, r), c: col, checker: 0, mesh: ballMesh }); }
+}
+objects.push({ m: M.model(-4, 1.5, 11, 14, 3, 0.4), c: [0.75, 0.73, 0.70], checker: 0, mesh: cubeMesh });
+objects.push({ m: M.model(12, 1.0, -6, 0.4, 2, 12), c: [0.75, 0.73, 0.70], checker: 0, mesh: cubeMesh });
+objects.forEach(o => o.c = o.c.map(lin));
+
+const MAXL = 256, LR = rng(42), lights = [];
+for (let i = 0; i < MAXL; i++) {
+  lights.push({ bx: (LR() - 0.5) * 34, by: 0.4 + LR() * 2.4, bz: (LR() - 0.5) * 34, orb: 0.8 + LR() * 3.5, ph: LR() * 6.283, sp: 0.15 + LR() * 0.45, sc: 0.7 + LR() * 0.6, col: hsv(LR(), 0.55 + LR() * 0.35, 1), pos: [0, 0, 0] });
+}
+lights[0].col = [1.0, 0.72, 0.30]; lights[0].sc = 1.0;
+function updateLights(t) { for (const L of lights) { L.pos[0] = L.bx + Math.cos(t * L.sp + L.ph) * L.orb; L.pos[1] = L.by + Math.sin(t * L.sp * 1.7 + L.ph) * 0.35; L.pos[2] = L.bz + Math.sin(t * L.sp + L.ph) * L.orb; } }
+
+// ---------- camera ----------
+const cam = { yaw: 0.75, pitch: 0.55, dist: 30, tgt: [0, 1, 0] };
+const camDefault = JSON.stringify(cam);
+let drag = null; const pointers = new Map();
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); drag = pointers.size ? drag : null; });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [c, d] = [...pointers.values()]; const d1 = Math.hypot(c[0] - d[0], c[1] - d[1]);
+    if (d0 > 0) cam.dist = Math.min(80, Math.max(0.5, cam.dist * d0 / d1));
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) {
+    const s = cam.dist * 0.0016, cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    cam.tgt[0] -= (cy * dx) * s; cam.tgt[2] -= (sy * dx) * s; cam.tgt[1] += dy * s;
+  } else {
+    cam.yaw += dx * 0.006; cam.pitch = Math.max(-0.2, Math.min(1.5, cam.pitch + dy * 0.006));
+  }
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(80, Math.max(0.5, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+$("reset").addEventListener("click", () => Object.assign(cam, JSON.parse(camDefault)));
+$("inside").addEventListener("click", () => {
+  state.animate = false; $("animate").checked = false;
+  state.solo = true; $("solo").checked = true;
+  const L = lights[0];
+  cam.tgt = [L.pos[0], L.pos[1], L.pos[2]];
+  cam.dist = state.radius * L.sc * 0.45; cam.pitch = 0.35;
+});
+
+// ---------- render targets ----------
+let W = 0, H = 0, T = null;
+function tex(fmt, w, h, levels = 1) { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, levels, fmt, w, h); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+function fbo(colors, depth, level = 0) {
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  colors.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, level));
+  if (depth) gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth);
+  gl.drawBuffers(colors.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  const st = gl.checkFramebufferStatus(gl.FRAMEBUFFER); if (st !== gl.FRAMEBUFFER_COMPLETE) throw new Error("FBO incomplete " + st);
+  return f;
+}
+function makeTargets(w, h) {
+  if (T) { for (const r of T.red) { gl.deleteTexture(r.tex); gl.deleteFramebuffer(r.fbo); } for (const k in T) { const o = T[k]; if (o instanceof WebGLTexture) gl.deleteTexture(o); else if (o instanceof WebGLFramebuffer) gl.deleteFramebuffer(o); else if (o instanceof WebGLRenderbuffer) gl.deleteRenderbuffer(o); } }
+  const t = {};
+  t.albedo = tex(gl.RGBA8, w, h); t.normal = tex(gl.RGBA16F, w, h); t.pos = tex(gl.RGBA16F, w, h);
+  t.light = tex(gl.RGBA16F, w, h); t.cost = tex(gl.RGBA16F, w, h); t.comp = tex(gl.RGBA8, w, h);
+  t.spheres = tex(gl.RGBA8, w, h); t.mask = tex(gl.RGBA8, w, h);
+  t.depth = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, t.depth); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, w, h);
+  t.gFBO = fbo([t.albedo, t.normal, t.pos], t.depth);
+  t.lFBO = fbo([t.light, t.cost], t.depth);
+  t.cFBO = fbo([t.comp], t.depth);
+  t.sFBO = fbo([t.spheres], t.depth);
+  t.mFBO = fbo([t.mask], t.depth);
+  t.red = [];
+  for (let rw = w, rh = h; rw > 1 || rh > 1;) {
+    rw = Math.ceil(rw / 4); rh = Math.ceil(rh / 4);
+    const rt = tex(gl.RGBA32F, rw, rh);
+    t.red.push({ tex: rt, fbo: fbo([rt], null), w: rw, h: rh });
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  T = t;
+}
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (w !== W || h !== H) { W = w; H = h; canvas.width = w; canvas.height = h; makeTargets(w, h); stripEl.style.setProperty("--ar", (w / h).toFixed(3)); }
+}
+
+// ---------- stats ----------
+const reduceBuf = new Float32Array(4);
+let frame = 0, gpuMs = null, query = null;
+const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(2) + " M" : n >= 1e3 ? (n / 1e3).toFixed(1) + " k" : Math.round(n).toString();
+function readStats(nLights) {
+  // sum the per-pixel cost counters with a 4×4 reduction chain down to 1×1, then read that one texel
+  gl.useProgram(reduceProg.p); gl.bindVertexArray(quad.vao); gl.activeTexture(gl.TEXTURE7);
+  gl.uniform1i(reduceProg.u.uSrc, 7);
+  let src = T.cost, sw = W, sh = H;
+  for (const r of T.red) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, r.fbo); gl.viewport(0, 0, r.w, r.h);
+    gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform2i(reduceProg.u.uSrcSize, sw, sh);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    src = r.tex; sw = r.w; sh = r.h;
+  }
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, reduceBuf);
+  gl.bindTexture(gl.TEXTURE_2D, null); gl.viewport(0, 0, W, H);
+  const px = W * H, runs = reduceBuf[0], wasted = Math.min(runs, reduceBuf[1]), useful = runs - wasted;
+  $("sPix").textContent = `${W}×${H}`;
+  $("sRuns").textContent = fmt(runs);
+  $("sPasses").textContent = (runs / px).toFixed(2) + " ×";
+  $("sBase").textContent = nLights + " ×";
+  const up = runs > 0 ? useful / runs * 100 : 0;
+  $("bUse").style.width = (runs / (px * nLights) * 100 * up / 100).toFixed(2) + "%";
+  $("bWaste").style.width = (runs / (px * nLights) * 100 * (100 - up) / 100).toFixed(2) + "%";
+  $("lUse").textContent = `useful ${up.toFixed(0)}%`;
+  $("lWaste").textContent = `wasted ${(100 - up).toFixed(0)}%`;
+  $("hudCost").innerHTML = `<b>${(runs / px).toFixed(2)}×</b> full-screen passes · ${(runs / (px * nLights) * 100).toFixed(1)}% of baseline`;
+}
+function pollTimer() {
+  if (!timerExt || !query) return;
+  if (gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) {
+    if (!gl.getParameter(timerExt.GPU_DISJOINT_EXT)) { const ms = gl.getQueryParameter(query, gl.QUERY_RESULT) / 1e6; gpuMs = gpuMs == null ? ms : gpuMs * 0.85 + ms * 0.15; }
+    gl.deleteQuery(query); query = null;
+  }
+}
+
+// ---------- frame ----------
+let simT = 0, last = performance.now();
+function setLightUniforms(prog, L, view, proj, rad) {
+  gl.uniformMatrix4fv(prog.u.uView, false, view); gl.uniformMatrix4fv(prog.u.uProj, false, proj);
+  gl.uniform3fv(prog.u.uLightW, L.pos); gl.uniform1f(prog.u.uRadius, rad);
+}
+function render(now) {
+  requestAnimationFrame(render);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (state.animate) simT += dt;
+  resize();
+  updateLights(simT);
+  const eye = [cam.tgt[0] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), cam.tgt[1] + cam.dist * Math.sin(cam.pitch), cam.tgt[2] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw)];
+  const view = M.lookAt(eye, cam.tgt, [0, 1, 0]);
+  const far = 200, proj = M.persp(0.95, W / H, 0.1, far);
+  const nL = state.solo ? 1 : state.count;
+
+  // 1) geometry pass -> G-buffer
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.gFBO); gl.viewport(0, 0, W, H);
+  gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.colorMask(true, true, true, true);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
+  gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 2, [0, 0, 0, 0]);
+  gl.stencilMask(0xff); gl.clearBufferfi(gl.DEPTH_STENCIL, 0, 1.0, 0);
+  gl.useProgram(sceneProg.p);
+  gl.uniformMatrix4fv(sceneProg.u.uView, false, view); gl.uniformMatrix4fv(sceneProg.u.uProj, false, proj);
+  for (const o of objects) {
+    gl.uniformMatrix4fv(sceneProg.u.uModel, false, o.m); gl.uniform3fv(sceneProg.u.uColor, o.c); gl.uniform1i(sceneProg.u.uChecker, o.checker);
+    gl.bindVertexArray(o.mesh.vao); gl.drawElements(gl.TRIANGLES, o.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+
+  // 2) lighting pass -> additive light buffer + cost counters
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.lFBO);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
+  gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, T.albedo);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, T.normal);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, T.pos);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.useProgram(lightProg.p);
+  gl.uniform1i(lightProg.u.uAlbedo, 0); gl.uniform1i(lightProg.u.uNormal, 1); gl.uniform1i(lightProg.u.uPos, 2);
+  gl.uniform1f(lightProg.u.uIntensity, state.intensity);
+  gl.uniform1i(lightProg.u.uFullscreen, state.mode === 0 ? 1 : 0);
+  gl.useProgram(stencilProg.p); gl.uniform1i(stencilProg.u.uFullscreen, 0);
+  gl.useProgram(lightProg.p);
+
+  pollTimer();
+  let timing = false;
+  if (timerExt && !query) { query = gl.createQuery(); gl.beginQuery(timerExt.TIME_ELAPSED_EXT, query); timing = true; }
+
+  const mode = state.mode;
+  for (let i = 0; i < nL; i++) {
+    const L = lights[i], rad = state.radius * L.sc;
+    const lv = M.xform(view, L.pos[0], L.pos[1], L.pos[2]);
+    if (mode === 4) {
+      // pass 1: mark stencil
+      gl.stencilMask(0xff); gl.clear(gl.STENCIL_BUFFER_BIT);
+      gl.useProgram(stencilProg.p); setLightUniforms(stencilProg, L, view, proj, rad);
+      gl.colorMask(false, false, false, false);
+      gl.disable(gl.CULL_FACE);
+      gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS);
+      gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.ALWAYS, 0, 0xff);
+      gl.stencilOpSeparate(gl.BACK, gl.KEEP, gl.INCR_WRAP, gl.KEEP);
+      gl.stencilOpSeparate(gl.FRONT, gl.KEEP, gl.DECR_WRAP, gl.KEEP);
+      gl.bindVertexArray(volMesh.vao); gl.drawElements(gl.TRIANGLES, volMesh.count, gl.UNSIGNED_SHORT, 0);
+      // pass 2: shade where stencil != 0
+      gl.colorMask(true, true, true, true);
+      gl.disable(gl.DEPTH_TEST);
+      gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
+      gl.stencilFunc(gl.NOTEQUAL, 0, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+      gl.useProgram(lightProg.p);
+    } else {
+      gl.disable(gl.STENCIL_TEST);
+      if (mode === 0) { gl.disable(gl.CULL_FACE); gl.disable(gl.DEPTH_TEST); }
+      else if (mode === 1) { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.disable(gl.DEPTH_TEST); }
+      else if (mode === 2) { gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); gl.disable(gl.DEPTH_TEST); }
+      else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.GEQUAL); }
+    }
+    setLightUniforms(lightProg, L, view, proj, rad);
+    gl.uniform3fv(lightProg.u.uLightV, lv); gl.uniform3fv(lightProg.u.uLightColor, L.col);
+    if (mode === 0) { gl.bindVertexArray(quad.vao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
+    else { gl.bindVertexArray(volMesh.vao); gl.drawElements(gl.TRIANGLES, volMesh.count, gl.UNSIGNED_SHORT, 0); }
+  }
+  if (timing) gl.endQuery(timerExt.TIME_ELAPSED_EXT);
+  gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+
+  if (frame % 12 === 0) {
+    readStats(nL);
+    const t = !timerExt ? "n/a in this browser" : gpuMs == null ? "measuring…" : gpuMs.toFixed(2) + " ms";
+    $("sGpu").textContent = t; $("hudTime").textContent = "GPU lighting: " + t;
+  }
+  frame++;
+
+  // 3a) debug: classify light #1's footprint into R = footprint, G = passes depth test, B = passes stencil
+  const L0 = lights[0], r0 = state.radius * L0.sc;
+  const drawVol = () => gl.drawElements(gl.TRIANGLES, volMesh.count, gl.UNSIGNED_SHORT, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.mFBO);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+  gl.useProgram(maskProg.p); setLightUniforms(maskProg, L0, view, proj, r0); gl.uniform1i(maskProg.u.uFullscreen, 0);
+  gl.bindVertexArray(volMesh.vao);
+  gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
+  gl.colorMask(true, false, false, false); drawVol();
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.GEQUAL);
+  gl.colorMask(false, true, false, false); drawVol();
+  gl.stencilMask(0xff); gl.clear(gl.STENCIL_BUFFER_BIT);
+  gl.colorMask(false, false, false, false); gl.disable(gl.CULL_FACE); gl.depthFunc(gl.LESS);
+  gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.ALWAYS, 0, 0xff);
+  gl.stencilOpSeparate(gl.BACK, gl.KEEP, gl.INCR_WRAP, gl.KEEP);
+  gl.stencilOpSeparate(gl.FRONT, gl.KEEP, gl.DECR_WRAP, gl.KEEP);
+  drawVol();
+  gl.colorMask(false, false, true, false); gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); gl.disable(gl.DEPTH_TEST);
+  gl.stencilFunc(gl.NOTEQUAL, 0, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+  drawVol();
+  gl.colorMask(true, true, true, true); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE);
+
+  // 3b) debug: translucent light spheres over the scene, with contact rings
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.sFBO);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+  gl.useProgram(sphereProg.p);
+  gl.uniformMatrix4fv(sphereProg.u.uView, false, view); gl.uniformMatrix4fv(sphereProg.u.uProj, false, proj); gl.uniform1i(sphereProg.u.uPos, 2);
+  gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+  for (let i = 0; i < nL; i++) {
+    const L = lights[i];
+    gl.uniform3fv(sphereProg.u.uLightW, L.pos); gl.uniform1f(sphereProg.u.uRadius, state.radius * L.sc); gl.uniform3fv(sphereProg.u.uColor, L.col);
+    drawVol();
+  }
+  gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST);
+
+  // 4) composite
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.cFBO);
+  gl.useProgram(compProg.p);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, T.light);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, T.cost);
+  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, T.spheres);
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, T.mask);
+  gl.uniform1i(compProg.u.uAlbedo, 0); gl.uniform1i(compProg.u.uNormal, 1); gl.uniform1i(compProg.u.uPos, 2); gl.uniform1i(compProg.u.uLight, 3); gl.uniform1i(compProg.u.uCost, 4);
+  gl.uniform1i(compProg.u.uSpheres, 5); gl.uniform1i(compProg.u.uMask, 6);
+  gl.uniform1i(compProg.u.uView, state.view); gl.uniform1f(compProg.u.uHeat, state.heat); gl.uniform1f(compProg.u.uFar, 60);
+  gl.uniform2f(compProg.u.uOff, 0, 0); gl.uniform2f(compProg.u.uSize, W, H); gl.uniform2f(compProg.u.uTex, W, H);
+  gl.bindVertexArray(quad.vao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // 5) light volume wireframes + centers
+  if (state.wire > 0) {
+    gl.useProgram(wireProg.p);
+    gl.uniformMatrix4fv(wireProg.u.uView, false, view); gl.uniformMatrix4fv(wireProg.u.uProj, false, proj);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    if (state.wire === 1) { gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); } else gl.disable(gl.DEPTH_TEST);
+    const a = state.solo ? 0.9 : Math.max(0.12, 0.6 - nL * 0.003);
+    for (let i = 0; i < nL; i++) {
+      const L = lights[i];
+      gl.uniform3fv(wireProg.u.uLightW, L.pos); gl.uniform1f(wireProg.u.uRadius, state.radius * L.sc); gl.uniform1f(wireProg.u.uPoint, 1);
+      gl.uniform4f(wireProg.u.uColor, L.col[0], L.col[1], L.col[2], a);
+      gl.bindVertexArray(volMesh.lines); gl.drawElements(gl.LINES, volMesh.lineCount, gl.UNSIGNED_SHORT, 0);
+    }
+    gl.disable(gl.DEPTH_TEST);
+    gl.bindVertexArray(quad.vao);
+    for (let i = 0; i < nL; i++) {
+      const L = lights[i];
+      gl.uniform3fv(wireProg.u.uLightW, L.pos); gl.uniform1f(wireProg.u.uRadius, 0); gl.uniform1f(wireProg.u.uPoint, state.solo ? 9 : 5);
+      gl.uniform4f(wireProg.u.uColor, L.col[0], L.col[1], L.col[2], 1);
+      gl.drawArrays(gl.POINTS, 0, 1);
+    }
+    gl.disable(gl.BLEND);
+  }
+
+  // 6) pipeline strip thumbnails, drawn with the same composite shader into small viewports
+  if (state.strip) {
+    const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+    gl.useProgram(compProg.p); gl.bindVertexArray(quad.vao);
+    for (const t of thumbs) {
+      const r = t.el.getBoundingClientRect();
+      const x = Math.round((r.left - cr.left + 1) * sx), y = Math.round((cr.bottom - r.bottom + 1) * sy);
+      const w = Math.round((r.width - 2) * sx), h = Math.round((r.height - 2) * sy);
+      if (w < 4 || h < 4) continue;
+      gl.viewport(x, y, w, h);
+      gl.uniform2f(compProg.u.uOff, x, y); gl.uniform2f(compProg.u.uSize, w, h); gl.uniform1i(compProg.u.uView, t.v);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    gl.viewport(0, 0, W, H);
+  }
+
+  // 7) present
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.cFBO); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+  gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+try { resize(); requestAnimationFrame(render); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

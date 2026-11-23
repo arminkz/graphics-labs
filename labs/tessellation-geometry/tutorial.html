@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessellation and geometry shaders: a tutorial</title>
+<script>if (window.self !== window.top) document.documentElement.classList.add("in-panel");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tutorial.css">
+</head>
+<body>
+<nav class="page-nav"><a href="index.html#tutorial">Open the lab with this tutorial</a><a href="../../index.html#tessellation-geometry">All labs</a></nav>
+<main class="tutorial">
+<h1>Tessellation and geometry shaders: a tutorial</h1>
+<p>Try each step in the lab as you read.</p>
+<p><span class="diagram-wrap"><img class="diagram" alt="Pipeline stages from patches to pixels" src="tessellation-geometry-diagram.svg" /></span></p>
+<p><strong>A note on the lab.</strong> Browsers have no tessellation or geometry shader stages: WebGL 2 and WebGPU both leave them out. The lab runs the same steps by other means (see "How the lab does this without those stages"). The GLSL in its code box is OpenGL 4.1 reference code. It was written for reading and has not been compiled.</p>
+<h2>The idea</h2>
+<p>You send the GPU a small number of patches, and it produces the triangles. Three things happen in order: you say how finely to cut each patch, fixed hardware does the cutting, and you say where each new vertex goes. The geometry shader comes after that and works on finished triangles, one at a time.</p>
+<h2>Step 1: Patches</h2>
+<p>A patch is a list of control points with no built-in meaning. You choose the count and draw with a patch primitive:</p>
+<pre><code class="language-c">glPatchParameteri(GL_PATCH_VERTICES, 16);
+glDrawArrays(GL_PATCHES, 0, 4 * 16);
+</code></pre>
+<p>The lab has three kinds: 4 corners (terrain), 16 Bézier control points, and 3 corners (icosahedron). Stage 1 in the strip shows them.</p>
+<h2>Step 2: The control shader chooses levels</h2>
+<p>The control shader (TCS) sees all control points of one patch and writes two sets of numbers:</p>
+<ul>
+<li><strong>Outer levels:</strong> how many pieces each border is cut into. A quad has four, a triangle has three.</li>
+<li><strong>Inner levels:</strong> how finely the middle is cut. A quad has two (along u and along v), a triangle has one.</li>
+</ul>
+<p>They are separate so that a border can match the neighboring patch while the middle does something else. An outer level of 0 or less discards the whole patch, which is a cheap way to cull.</p>
+<p>Which outer level belongs to which border:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Domain</th>
+<th><code>gl_TessLevelOuter[0]</code></th>
+<th><code>[1]</code></th>
+<th><code>[2]</code></th>
+<th><code>[3]</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Quad</td>
+<td>the u = 0 edge</td>
+<td>the v = 0 edge</td>
+<td>the u = 1 edge</td>
+<td>the v = 1 edge</td>
+</tr>
+<tr>
+<td>Triangle</td>
+<td>the edge opposite vertex 0</td>
+<td>opposite vertex 1</td>
+<td>opposite vertex 2</td>
+<td>unused</td>
+</tr>
+</tbody>
+</table></div>
+<p>For a quad, <code>gl_TessLevelInner[0]</code> cuts along u and <code>[1]</code> cuts along v.</p>
+<p>The lab's distance modes use this rule for one edge:</p>
+<pre><code class="language-glsl">float edgeLevel(vec3 a, vec3 b) {
+  float onScreen = distance(a, b) * projScale / distance(eye, 0.5 * (a + b));
+  return clamp(onScreen / targetPx, 1.0, maxLevel);
+}
+</code></pre>
+<p><code>projScale</code> is <code>viewportHeight / (2 * tan(fov / 2))</code>, so <code>onScreen</code> is roughly the edge's length in pixels. Dividing by the target edge length gives the number of pieces.</p>
+<h3>Why cracks appear</h3>
+<p>If two neighbors cut their shared border into different numbers of pieces, the vertices on the two sides do not line up. Displacement then pulls them apart and you see holes. The fix has two parts:</p>
+<ol>
+<li>Compute each outer level only from that edge's two endpoints, so both patches get the same number.</li>
+<li>Displace by something both sides agree on. The lab samples height by world position, not by patch-local coordinates.</li>
+</ol>
+<p>In the lab, "one level per patch" breaks the first rule, and the pink background shows through the cracks.</p>
+<h2>Step 3: The tessellator</h2>
+<p>This stage is fixed hardware. It knows nothing about your surface. It works in the patch's own coordinates, (u, v) in a unit square or barycentric (a, b, c) in a triangle, and outputs coordinates plus the triangles that connect them.</p>
+<p><strong>Cutting one edge</strong> (<code>subdiv</code> in the lab):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Spacing</th>
+<th>Rule</th>
+<th>What you see</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>equal_spacing</code></td>
+<td>Round the level up to a whole number n; n equal pieces</td>
+<td>Triangles pop in at whole numbers</td>
+</tr>
+<tr>
+<td><code>fractional_even_spacing</code></td>
+<td>Round up to an even n; n − 2 equal pieces plus two shorter ones</td>
+<td>New vertices slide in smoothly</td>
+</tr>
+<tr>
+<td><code>fractional_odd_spacing</code></td>
+<td>The same with an odd n</td>
+<td>Same, and level 1 stays one piece</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Cutting a quad</strong> (<code>quadPattern</code>):</p>
+<ol>
+<li>Cut u and v by the two inner levels. Everything except the outermost ring is a regular grid.</li>
+<li>Cut each border by its own outer level.</li>
+<li>Fill the ring between border and grid. <code>stitch</code> walks along both rows and always advances the side whose next point comes first.</li>
+</ol>
+<p>With every level equal to n, a quad becomes 2n² triangles, so level 4 gives 32.</p>
+<p><strong>Cutting a triangle</strong> (<code>triPattern</code>): concentric triangles, each with two fewer pieces per side than the one outside it, ending in a point or a single triangle. Level 3 gives 13 triangles and level 4 gives 24.</p>
+<p>The small diagram in the lab's panel draws this pattern for the patch nearest the camera.</p>
+<h2>Step 4: The evaluation shader places vertices</h2>
+<p>The evaluation shader (TES) runs once per generated vertex. It reads <code>gl_TessCoord</code> and all control points of the patch, and returns a position. This is where the surface is defined. The lab's three versions:</p>
+<pre><code class="language-glsl">// Terrain: bilinear blend of 4 corners, then displacement
+vec3 p = mix(mix(P0, P1, t.x), mix(P3, P2, t.x), t.y);
+p.y += height(p.xz) * amount;
+
+// Bézier: weight 16 control points with Bernstein polynomials
+p += bu[i] * bv[j] * P[j * 4 + i];
+
+// Icosahedron: barycentric blend, then push onto a sphere
+vec3 p = b.x * P0 + b.y * P1 + b.z * P2;
+p = mix(p, normalize(p) * radius, roundness);
+</code></pre>
+<p>For normals, the lab evaluates the surface at two nearby tess coordinates and takes the cross product of the differences.</p>
+<h2>Step 5: The geometry shader</h2>
+<p>The geometry shader (GS) runs once per primitive and sees all of its vertices. It declares an input type, an output type and a maximum vertex count, then calls <code>EmitVertex()</code> and <code>EndPrimitive()</code> as many times as it likes, including zero.</p>
+<p>That gives it three abilities a vertex shader lacks, and the lab has one mode for each:</p>
+<ul>
+<li><strong>Per-face data (Explode):</strong> the face normal and centroid need all three vertices.</li>
+<li><strong>Changing the primitive type (Normals):</strong> triangles go in, line strips come out.</li>
+<li><strong>Amplification (Grass):</strong> each triangle is emitted, plus one extra blade on its centroid. This is why the blade count follows the tessellation level.</li>
+</ul>
+<p>The wireframe overlay also depends on per-primitive knowledge: each corner gets a different barycentric coordinate, and the fragment shader draws a line where one of them is near zero.</p>
+<h2>How the lab does this without those stages</h2>
+<ul>
+<li><strong>Control shader:</strong> <code>retessellate()</code> in JavaScript computes the levels for every patch.</li>
+<li><strong>Tessellator:</strong> <code>getPattern()</code> returns the triangle list for those levels, in patch coordinates.</li>
+<li><strong>Evaluation shader:</strong> the function <code>tes()</code> inside the vertex shader. Control points live in a float texture, one row per patch (texels 0 to 15 are control points, 16 holds the inner levels, 17 the outer levels).</li>
+<li><strong>Geometry shader:</strong> each tessellated triangle is one instance, and its three tess coordinates are instance attributes. <code>gl_VertexID</code> picks the corner. Because the vertex shader has all three coordinates, it can evaluate all three corners and so compute a face normal or centroid. Lines and blades are extra instanced draws over the same buffer.</li>
+</ul>
+<p>One caveat: OpenGL leaves the exact length and position of the two short pieces in the fractional modes to the implementation, so a real GPU's pattern can differ from the lab's. The lab's pattern was checked for full coverage and consistent winding, but it was not compared against a real GPU's output.</p>
+<h2>Cost, and what is used today</h2>
+<ul>
+<li>Tessellation is still common for terrain, water and displacement, because detail follows the camera and the mesh on disk stays small.</li>
+<li>Geometry shaders are usually slow when they amplify, since output size is not known in advance. Metal has none at all. Instancing or compute shaders now do most of that work.</li>
+<li>Mesh shaders (DirectX 12, Vulkan) replace both stages with one programmable stage that outputs small batches of triangles directly.</li>
+</ul>
+<h2>Things to try in the lab</h2>
+<ol>
+<li>Click through the stages under the scene, 1 to 5.</li>
+<li>Pick <strong>Manual</strong>, set <strong>Outer</strong> to 1 and drag <strong>Inner</strong>. Then do the reverse.</li>
+<li>With <code>equal_spacing</code>, drag a level slowly and watch triangles pop. Switch to a fractional mode and watch vertices slide.</li>
+<li>On the terrain, switch between <strong>per edge</strong> and <strong>per patch</strong> and look along patch borders.</li>
+<li>Orbit with a distance mode on and watch the <strong>Tessellation levels</strong> stage.</li>
+<li>On the Bézier scene, set both levels to 1, then raise them.</li>
+<li>Pick <strong>Grass</strong> and change the levels: the blade count follows the triangle count.</li>
+</ol>
+<hr />
+<h1>The evaluation shader in more detail</h1>
+<p>The evaluation shader is the vertex shader of the tessellated mesh. The tessellator has produced a vertex that exists only as a coordinate inside the patch, and the TES turns that coordinate into a real position and real attributes.</p>
+<h2>What it receives</h2>
+<ul>
+<li><strong><code>gl_TessCoord</code>:</strong> where this vertex sits inside the patch.</li>
+<li>Quads: <code>xy</code> is (u, v), each from 0 to 1.</li>
+<li>Triangles: <code>xyz</code> is barycentric, and the three values sum to 1.</li>
+<li>Isolines: <code>x</code> runs along the line, <code>y</code> selects which line.</li>
+<li><strong><code>gl_in[]</code>:</strong> every control point of the patch, exactly as the control shader wrote them. Your own per-control-point outputs arrive as arrays too, for example <code>in vec3 normal[]</code>.</li>
+<li><strong><code>patch in</code> variables:</strong> values the control shader wrote once per patch, such as a material ID.</li>
+<li><strong>The levels:</strong> <code>gl_TessLevelOuter</code> and <code>gl_TessLevelInner</code> are readable here.</li>
+</ul>
+<p>The layout line at the top also configures the tessellator, even though it is written in this shader:</p>
+<pre><code class="language-glsl">layout(quads, fractional_even_spacing, ccw) in;
+</code></pre>
+<h2>What it must do</h2>
+<p>Nothing is interpolated for you. The tessellator gives a coordinate and no data, so every attribute a later stage needs has to be computed by hand: position, normal, UV, color.</p>
+<pre><code class="language-glsl">vec3 b = gl_TessCoord;
+vec3 pos = b.x * gl_in[0].gl_Position.xyz + b.y * gl_in[1].gl_Position.xyz + b.z * gl_in[2].gl_Position.xyz;
+vec2 uv  = b.x * uvIn[0] + b.y * uvIn[1] + b.z * uvIn[2];
+vec3 n   = normalize(b.x * normalIn[0] + b.y * normalIn[1] + b.z * normalIn[2]);
+</code></pre>
+<p>If there is no geometry shader, the TES must also write <code>gl_Position</code> in clip space. If there is one, the TES can pass a world-space position and let the geometry shader project it, which is what the lab's reference code does.</p>
+<h2>What "evaluate" means</h2>
+<p>The interpolation rule you choose defines the surface. The same grid of coordinates gives very different shapes:</p>
+<ul>
+<li><strong>Linear blend:</strong> the patch stays flat, so you only gain vertices. This is useful only when followed by displacement.</li>
+<li><strong>Displacement:</strong> blend linearly, then move the vertex along its normal by a height-map value. This is the terrain scene.</li>
+<li><strong>Bézier or other spline:</strong> treat the control points as a control net and compute the curved surface. This is the Bézier scene.</li>
+<li><strong>Curving from normals:</strong> PN triangles and Phong tessellation bend a flat triangle using its vertex normals, so an ordinary low-poly mesh gets a smooth silhouette.</li>
+<li><strong>Projection:</strong> push the vertex onto an analytic shape, as the icosahedron scene does with <code>normalize(p) * radius</code>.</li>
+</ul>
+<p>In the lab all of this is the function <code>tes()</code> inside the vertex shader. The Displacement and Roundness sliders change only that function, which is why the triangle count does not move when you drag them.</p>
+<h2>Details that matter in practice</h2>
+<ul>
+<li><strong>Normals change with the position.</strong> After displacement the interpolated normal is wrong. Recompute it from the height map with finite differences, or analytically from the spline's derivatives, or leave it to a normal map in the fragment shader.</li>
+<li><strong>Texture lookups need an explicit mip level.</strong> Only fragment shaders have automatic derivatives, so <code>texture()</code> here reads the base level. Use <code>textureLod()</code> and choose the level from the tessellation density, otherwise the height map aliases when the mesh is coarse. The lab's reference terrain code uses plain <code>texture()</code> for brevity.</li>
+<li><strong>Shared borders must evaluate identically.</strong> A vertex on a border is computed twice, once by each patch. If the two results differ even slightly, a crack opens. Displace by something both patches agree on (the lab uses world position), and mark the calculation <code>precise</code> so the compiler does not reorder the arithmetic differently in each case.</li>
+<li><strong>Cost follows vertices, not triangles.</strong> A quad at level n has about (n + 1)² vertices and 2n² triangles, so the TES runs roughly half as many times as there are triangles. Keep it cheap anyway, because at level 64 that is still over 4,000 runs per patch.</li>
+</ul>
+</main>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow mapping: a walkthrough of the Shadow Mapping Lab</title>
+<script>if (window.self !== window.top) document.documentElement.classList.add("in-panel");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tutorial.css">
+</head>
+<body>
+<nav class="page-nav"><a href="index.html#tutorial">Open the lab with this tutorial</a><a href="../../index.html#shadow-mapping">All labs</a></nav>
+<main class="tutorial">
+<h1>Shadow mapping: a walkthrough of the Shadow Mapping Lab</h1>
+<p>Each step says what to try in the lab.</p>
+<h2>The one idea</h2>
+<p>A point is <strong>in shadow if something sits between it and the sun.</strong> Shadow mapping checks that in two passes:</p>
+<ol>
+<li><strong>From the sun:</strong> render the scene's depth. For every direction the sun shines, store the distance to the <em>first</em> thing it hits. That image is the <strong>shadow map</strong>.</li>
+<li><strong>From the camera:</strong> for each pixel, work out its own distance from the sun and compare. If it's farther than what the map stored, something else got hit first, so the pixel is in shadow.</li>
+</ol>
+<p><span class="diagram-wrap"><img class="diagram" alt="Shadow map depth comparison" src="shadow-mapping-diagram.svg" /></span></p>
+<p>Everything else either sets up those two passes or fixes a problem they cause.</p>
+<h2>Step 1: Put a camera on the sun (thumbnail 1, "Sun's view")</h2>
+<p>To render from the sun, you need view and projection matrices for it, like any camera.</p>
+<ul>
+<li><strong>View matrix:</strong> place the sun's camera behind the area you care about, looking along the sun's direction.</li>
+<li><strong>Projection:</strong> a directional light has parallel rays, so it uses an <strong>orthographic</strong> projection (a box), not a perspective one.</li>
+</ul>
+<pre><code class="language-js">const eye  = center + sunDir * (radius + 80);       // back up toward the sun
+const view = lookAt(eye, center, up);
+const proj = ortho(-radius, radius, -radius, radius, 0, 2 * radius + 90);
+const lightVP = proj * view;                         // used in BOTH passes
+</code></pre>
+<p>The ortho box's width (<code>2 × radius</code>) decides how much ground the shadow map covers. Remember that for step 5.</p>
+<p><em>Try it:</em> move the <strong>Sun azimuth/elevation</strong> sliders and watch thumbnail 1. That's literally what the sun sees.</p>
+<h2>Step 2: Render depth only (thumbnail 2, "Shadow map")</h2>
+<p>Render the scene with <code>lightVP</code> into a <strong>depth texture</strong> that has no color attachment, because you only want the depth buffer. The fragment shader does nothing.</p>
+<pre><code class="language-js">gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFBO);       // depth attachment only
+gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, shadowTex, 0, layer);
+gl.clear(gl.DEPTH_BUFFER_BIT);
+for (const obj of scene) draw(obj, lightVP);         // vertex shader: lightVP * model * pos
+</code></pre>
+<p>In thumbnail 2, brighter means closer to the sun. Tall objects are bright blobs and the ground is a gradient. It's just a grayscale picture of depth.</p>
+<h2>Step 3: Compare depths in the main pass (thumbnail 5, "Shadow mask")</h2>
+<p>Render normally from the camera. In the fragment shader, take the pixel's <strong>world position</strong>, push it through the <strong>same <code>lightVP</code></strong>, and you get two things: where to look in the shadow map, and the pixel's own depth from the sun.</p>
+<pre><code class="language-glsl">vec4 lp = lightVP * vec4(worldPos, 1.0);
+vec3 sc = lp.xyz * 0.5 + 0.5;            // NDC [-1,1] → texture space [0,1]
+// sc.xy = where to read in the shadow map
+// sc.z  = my own depth from the sun
+float stored = texture(shadowMap, sc.xy).r;
+float lit = (sc.z &lt;= stored) ? 1.0 : 0.0;
+</code></pre>
+<p><code>lit</code> multiplies <strong>only the sun's contribution</strong>. Ambient light still reaches shadowed areas, otherwise shadows would be pitch black. Surfaces facing away from the sun (N·L ≤ 0) are dark anyway, so they skip the lookup, which is why they show blue in the mask view.</p>
+<p><em>Try it:</em> open thumbnail <strong>5</strong>. White passed the depth test, black failed it.</p>
+<h2>Step 4: Fix shadow acne (the bias controls)</h2>
+<p>Press <strong>Show acne</strong>. Ugly stripes appear on lit surfaces, especially the ramp and the ground.</p>
+<p><strong>Why:</strong> one shadow-map texel covers a patch of surface, but it stores <strong>one</strong> depth value. On a slanted patch, half the patch is a bit farther from the sun than the stored value, so it shadows <em>itself</em>. That gives alternating lit and shadowed stripes.</p>
+<p>The fixes all push the comparison a little in favor of "lit":</p>
+<ul>
+<li><strong>Depth bias:</strong> compare against <code>stored + bias</code>. Simple, but one value can't suit every surface.</li>
+<li><strong>Slope-scale bias:</strong> <code>glPolygonOffset</code> adds more bias on slanted surfaces, where acne is worst.</li>
+<li><strong>Normal offset:</strong> move the lookup point slightly along the surface normal before projecting it. It works very well and is measured in texels.</li>
+<li><strong>Draw back faces into the shadow map:</strong> the stored depth becomes the <em>far</em> side of each object, so its front surface can't shadow itself.</li>
+</ul>
+<p><strong>The trade-off:</strong> press <strong>Show peter-panning</strong>. Too much bias detaches shadows from their objects. The table and spheres look like they float because the shadow starts too far from the contact point. Tuning means using the smallest bias that removes acne. <strong>Balanced</strong> is a reasonable setting.</p>
+<h2>Step 5: Fight blocky edges with resolution and cascades (thumbnails 3 and 4)</h2>
+<p>Set <strong>Resolution 256</strong> and <strong>Filter: Hard</strong>. Shadow edges turn into staircases. Open thumbnail <strong>4 (Texel grid)</strong>: each cell is one shadow-map texel projected onto the scene. When a cell covers many screen pixels, you see blocks.</p>
+<p>A single map can't be sharp everywhere. Covering 80 m at 2048² gives about 4 cm per texel, which is too coarse up close and wasted far away. <strong>Cascaded shadow maps</strong> fix this:</p>
+<ol>
+<li>Split the camera's view distance into ranges. The <strong>split</strong> slider blends evenly spaced splits with logarithmic ones (log puts more detail close up).</li>
+<li>For each range, fit its own ortho box around just that slice of the camera's view, and render a separate shadow map into one layer of a texture array.</li>
+<li>In the main pass, each pixel picks its cascade by distance from the camera:</li>
+</ol>
+<pre><code class="language-glsl">int c = 0;
+while (c &lt; numCascades - 1 &amp;&amp; viewDepth &gt; split[c]) c++;
+// then use lightVP[c] and layer c
+</code></pre>
+<p><em>Try it:</em> thumbnail <strong>3</strong> colors each cascade, and the <strong>Measured</strong> table shows texel sizes. With the defaults, the nearest cascade is about 1 cm per texel and the farthest about 6 cm, all with the same memory per layer.</p>
+<h2>Step 6: Stop shimmering (stabilization)</h2>
+<p>Turn off <strong>Stabilize cascades</strong>, turn on <strong>Slowly orbit the camera</strong>, and watch shadow edges crawl. Each frame, the ortho box is refit to the camera's view, so its size and position change slightly. The texel grid slides across the world, and edges re-quantize every frame.</p>
+<p>The lab fixes it in two ways:</p>
+<ul>
+<li><strong>Bounding sphere:</strong> fit a sphere around the frustum slice instead of a tight box. A sphere's size doesn't change when the camera rotates, so the texel size stays constant.</li>
+<li><strong>Texel snapping:</strong> move the box only in whole-texel steps, so the grid stays locked to the world.</li>
+</ul>
+<pre><code class="language-js">const o = lightVP * [0,0,0,1];                    // where the world origin lands
+const t = o.xy * (size / 2);                      // ...in texel units
+proj.translate((round(t) - t) / (size / 2));      // nudge onto the texel grid
+</code></pre>
+<h2>Step 7: Soften edges with filtering</h2>
+<p>Real sun shadows have soft edges, called the penumbra. Step through the <strong>Filter</strong> menu:</p>
+<ol>
+<li><strong>Hard:</strong> one compare, 0 or 1, so you see texel staircases.</li>
+<li><strong>Hardware PCF:</strong> a <code>sampler2DShadow</code> with LINEAR filtering makes the GPU do 4 compares and blend the 0/1 results in one call. It's free, and it's why the lab binds the shadow map twice with two different sampler objects.</li>
+<li><strong>PCF N×N:</strong> average many hardware lookups in a grid. The key rule is <strong>compare first, then average</strong>. Averaging depths and then comparing is wrong, because a mix of a near and a far depth is a depth that doesn't exist.</li>
+<li><strong>Poisson:</strong> 16 taps in a scattered pattern, rotated randomly per pixel. You get grainy noise instead of banding, for fewer taps.</li>
+<li><strong>PCSS:</strong>
+   - search nearby texels for blockers and average their depth,
+   - estimate the penumbra width as (my depth − blocker depth) × sun size,
+   - run PCF with that radius.</li>
+</ol>
+<p>Shadows stay sharp where objects touch the ground and blur further away. Raise <strong>Sun size</strong> and look at the table legs.</p>
+<h2>The whole pipeline, in one breath</h2>
+<p><strong>For each cascade:</strong> fit an ortho box from the sun → render depth into one layer.
+<strong>For each camera pixel:</strong> pick a cascade → project into the sun's space → compare depths (with bias, and filtered) → multiply the sun's light by the result.</p>
+<p>Every control in the lab changes one link in that chain.</p>
+</main>
+</body>
+</html>

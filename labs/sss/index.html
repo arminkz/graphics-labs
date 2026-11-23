@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSS Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport with a pass strip, instrument panel on the right; stacks on narrow screens. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #ff8a6b;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 360px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas#c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas#c:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.82); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 120px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 10px; }
+#prof { display: block; width: 100%; height: 150px; margin-top: 8px; background: #0f1217; border: 1px solid var(--line); border-radius: 6px; }
+.kcap { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.row { display: grid; grid-template-columns: 104px 1fr 62px; align-items: center; gap: 8px; margin: 5px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+.dim { opacity: .45; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.legend2 { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend2 span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; background: var(--c); }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL subsurface scattering scene"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudTech">technique</span>
+      <span class="chip" id="hudTime">fps</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll or pinch to zoom · right-drag to pan</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Subsurface scattering lab</h1>
+      <p class="sub">Light that enters skin, wax or jade bounces around under the surface and comes out somewhere else. Here that is approximated after lighting: blur the diffuse light across the screen, by a real-world distance, with a different width per color channel.</p>
+    </div>
+
+    <section>
+      <h2>Technique</h2>
+      <select id="tech" aria-label="SSS technique">
+        <option value="0">1. Off: plain diffuse + specular</option>
+        <option value="1">2. Naive screen blur</option>
+        <option value="2" selected>3. Separable SSS (Jimenez 2015)</option>
+      </select>
+      <div class="explain" id="explain"></div>
+      <div class="checks" id="ingredients">
+        <label><input type="checkbox" id="depthScale" checked> Scale width by depth (a real-world size, not pixels)</label>
+        <label><input type="checkbox" id="follow" checked> Follow the surface (don't blur across depth edges)</label>
+        <label><input type="checkbox" id="perChannel" checked> Per-channel profile (red travels farther)</label>
+        <label><input type="checkbox" id="specSplit" checked> Keep specular out of the blur</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Scattering profile</h2>
+      <div class="row"><label for="profMat">Show profile</label><select id="profMat"><option value="0">Skin: sum of 6 Gaussians (d'Eon)</option><option value="1">Wax: Burley normalized diffusion</option><option value="2">Jade: Burley normalized diffusion</option></select></div>
+      <canvas id="prof" aria-label="Plot of the scattering profile weights per color channel"></canvas>
+      <div class="kcap" id="profCap"></div>
+      <div class="row"><label for="width">Scatter width</label><input id="width" type="range" min="0" max="4" step="0.05" value="1"><output id="widthV">1.00×</output></div>
+      <div class="row"><label for="taps">Taps per pass</label><select id="taps"><option>9</option><option>17</option><option selected>25</option></select></div>
+      <div class="row" id="rowNaive"><label for="naivePx">Naive radius</label><input id="naivePx" type="range" min="1" max="40" step="1" value="12"><output id="naivePxV">12 px</output></div>
+    </section>
+
+    <section>
+      <h2>Lighting</h2>
+      <div class="row"><label for="az">Key azimuth</label><input id="az" type="range" min="-180" max="180" step="1" value="55"><output id="azV">55°</output></div>
+      <div class="row"><label for="el">Key elevation</label><input id="el" type="range" min="-30" max="85" step="1" value="25"><output id="elV">25°</output></div>
+      <div class="row"><label for="bump">Skin bumps</label><input id="bump" type="range" min="0" max="2" step="0.05" value="1"><output id="bumpV">1.00</output></div>
+      <div class="row"><label for="split">Split compare</label><input id="split" type="range" min="0" max="100" step="1" value="0"><output id="splitV">off</output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="stripes" checked> Striped key light (makes the profile visible)</label>
+        <label><input type="checkbox" id="back" checked> Back light (transmission through thin parts)</label>
+        <label><input type="checkbox" id="stripOn" checked> Show pass thumbnails</label>
+      </div>
+      <div class="btns"><button class="p" type="button" id="reset">Reset camera</button><button class="p" type="button" id="closeup">Close-up on the ear</button></div>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <select id="view" aria-label="Main view">
+        <option value="0">Final</option>
+        <option value="4">Diffuse light, before SSS</option>
+        <option value="5">After the horizontal pass</option>
+        <option value="6">After both passes</option>
+        <option value="7">Specular (never blurred)</option>
+        <option value="3">SSS mask (which pixels scatter)</option>
+        <option value="2">G-buffer: normals with bumps</option>
+        <option value="1">G-buffer: depth</option>
+      </select>
+      <div id="lgMask" class="legend2" style="display:none">
+        <span style="--c:#ff7a5c">skin</span><span style="--c:#ffcf8a">wax</span><span style="--c:#5fd18a">jade</span><span style="--c:#30333a">no scattering: left as is</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Measured</h2>
+      <dl class="kv">
+        <dt>Blur taps per SSS pixel</dt><dd id="sTaps">–</dd>
+        <dt>GPU, G-buffer + lighting</dt><dd id="gG">–</dd>
+        <dt>GPU, SSS (both passes)</dt><dd id="gS">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Move <b>Split compare</b> to 50%: left half without SSS, right half with. The stripes on the head get soft, warm edges, and the skin stops looking like plastic.</li>
+        <li>Open the <b>Diffuse light</b> stages 4 → 5 → 6: horizontal blur, then vertical. Only the diffuse light is blurred. Albedo and specular stay sharp.</li>
+        <li>Pick <b>Naive screen blur</b> and zoom in and out: the blur stays the same number of pixels, so the face looks waxy from far away and barely blurred up close. It also bleeds onto the floor.</li>
+        <li>Back on separable, turn off <b>Follow the surface</b> and look where the head overlaps the background: light leaks across the edge.</li>
+        <li>Turn off <b>Per-channel profile</b>: the scattering turns gray and the face looks like soft plastic. The red fringe is what reads as skin.</li>
+        <li>Press <b>Close-up on the ear</b> with the back light on: thin parts glow red because light passes through them.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+// ---------- UI ----------
+const TECHS = [
+  "No scattering: light stops exactly where it hits. Skin under hard light looks like painted plastic: sharp shading edges, every bump visible.",
+  "Blur the lit image with a fixed blur, e.g. 12 pixels wide, for everything. It looks soft in one shot but is wrong in three ways: the size is in pixels, so it changes when you zoom; it bleeds across object edges; and all colors spread equally.",
+  "Two 1D passes (horizontal, then vertical) over the diffuse light only. Each tap is placed by a real-world distance in mm, converted to pixels using the pixel's depth. Weights come from a measured scattering profile, separately for R, G and B. Taps that land on a different depth or a non-scattering pixel are replaced by the center color so light doesn't leak across edges."
+];
+const state = { tech: 2, depthScale: true, follow: true, perChannel: true, specSplit: true, profMat: 0, width: 1, taps: 25, naivePx: 12, az: 55, el: 25, bump: 1, split: 0, stripes: true, back: true, view: 0, strip: true };
+const fmt = { width: v => v.toFixed(2) + "×", naivePx: v => v + " px", az: v => v + "°", el: v => v + "°", bump: v => v.toFixed(2), split: v => v === 0 ? "off" : v + "%" };
+for (const k in fmt) { const el = $(k), out = $(k + "V"); el.addEventListener("input", () => { state[k] = +el.value; out.textContent = fmt[k](state[k]); if (k === "width") drawProfile(); }); }
+for (const k of ["depthScale", "follow", "perChannel", "specSplit", "stripes", "back"]) $(k).addEventListener("change", e => { state[k] = e.target.checked; if (k === "perChannel") drawProfile(); });
+$("tech").addEventListener("change", e => { state.tech = +e.target.value; syncTech(); });
+$("taps").addEventListener("change", e => { state.taps = +e.target.value; buildKernels(); drawProfile(); });
+$("profMat").addEventListener("change", e => { state.profMat = +e.target.value; drawProfile(); });
+function syncTech() {
+  $("explain").textContent = TECHS[state.tech];
+  $("hudTech").innerHTML = `<b>${state.tech + 1}</b> · ${$("tech").options[state.tech].text.replace(/^\d+\.\s*/, "")}`;
+  $("ingredients").classList.toggle("dim", state.tech !== 2); $("rowNaive").classList.toggle("dim", state.tech !== 1);
+}
+const STAGES = [[1, "1 Depth"], [2, "2 Normals"], [3, "3 SSS mask"], [4, "4 Diffuse"], [5, "5 H pass"], [6, "6 V pass"], [7, "7 Specular"], [0, "8 Final"]];
+const stripEl = $("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+function setView(v) { state.view = v; $("view").value = String(v); thumbs.forEach(t => t.el.classList.toggle("on", t.v === v)); $("lgMask").style.display = v === 3 ? "" : "none"; }
+$("view").addEventListener("change", e => setView(+e.target.value));
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; rectsDirty = true; });
+
+// ---------- scattering profiles ----------
+// Skin: d'Eon & Luebke 2007, sum of 6 Gaussians (variance in mm², RGB weights)
+const SKIN = [[0.0064, [0.233, 0.455, 0.649]], [0.0484, [0.100, 0.336, 0.344]], [0.187, [0.118, 0.198, 0.0]], [0.567, [0.113, 0.007, 0.007]], [1.99, [0.358, 0.004, 0.0]], [7.41, [0.078, 0.0, 0.0]]];
+const skinR = r => [0, 1, 2].map(c => SKIN.reduce((s, [v, w]) => s + w[c] * Math.exp(-r * r / (2 * v)) / (2 * Math.PI * v), 0));
+// Burley normalized diffusion: R(r) = (e^(-r/d) + e^(-r/3d)) / (8 π d r), one d per channel (mm)
+const burley = d => r => d.map(dc => (Math.exp(-r / dc) + Math.exp(-r / (3 * dc))) / (8 * Math.PI * dc * r));
+const PROFILES = [
+  { name: "skin", fn: skinR, range: 6, tint: [1, 0.3, 0.18] },
+  { name: "wax", fn: burley([3.2, 2.0, 1.1]), range: 9, tint: [1, 0.72, 0.42] },
+  { name: "jade", fn: burley([0.7, 2.4, 1.0]), range: 7, tint: [0.32, 0.95, 0.45] }
+];
+const kernels = new Float32Array(3 * 25 * 4);
+function buildKernels() {
+  const n = state.taps;
+  PROFILES.forEach((P, pi) => {
+    const off = [];
+    for (let i = 0; i < n; i++) { const t = -1 + 2 * i / (n - 1); off.push(P.range * Math.sign(t) * t * t); }
+    const w = off.map((o, i) => {
+      const area = ((i > 0 ? o - off[i - 1] : 0) + (i < n - 1 ? off[i + 1] - o : 0)) / 2;
+      const r = Math.max(Math.abs(o), P.range * 0.015);
+      return P.fn(r).map(v => v * area);
+    });
+    const sum = [0, 1, 2].map(c => w.reduce((s, x) => s + x[c], 0));
+    for (let i = 0; i < 25; i++) {
+      const b = (pi * 25 + i) * 4;
+      if (i < n) { kernels[b] = w[i][0] / sum[0]; kernels[b + 1] = w[i][1] / sum[1]; kernels[b + 2] = w[i][2] / sum[2]; kernels[b + 3] = off[i]; }
+      else kernels.fill(0, b, b + 4);
+    }
+  });
+  kernelsDirty = true;
+}
+let kernelsDirty = true;
+function drawProfile() {
+  const cv = $("prof"), dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const P = PROFILES[state.profMat], n = state.taps, pad = 10, base = h - 22;
+  g.strokeStyle = "#3a4150"; g.beginPath(); g.moveTo(pad, base); g.lineTo(w - pad, base); g.stroke();
+  g.fillStyle = "#8a93a3"; g.font = "11px IBM Plex Mono, monospace"; g.textAlign = "center";
+  g.fillText(`−${P.range} mm`, pad + 18, h - 6); g.fillText("0", w / 2, h - 6); g.fillText(`+${P.range} mm`, w - pad - 18, h - 6);
+  const xs = o => w / 2 + o / P.range * (w / 2 - pad);
+  const dens = [];
+  for (let i = 0; i < n; i++) {
+    const b = (state.profMat * 25 + i) * 4, o = kernels[b + 3];
+    const prev = i > 0 ? kernels[b - 1] : o, next = i < n - 1 ? kernels[b + 7] : o, area = Math.max(1e-4, (next - prev) / 2);
+    let k = [kernels[b], kernels[b + 1], kernels[b + 2]];
+    if (!state.perChannel) { const m = (k[0] + k[1] + k[2]) / 3; k = [m, m, m]; }
+    dens.push([o, k.map(v => v / area)]);
+  }
+  const mx = Math.max(...dens.flatMap(d => d[1].filter((_, i) => true)).map(v => Math.min(v, 1e9)));
+  ["#ff5a4a", "#4fd27a", "#5a8cff"].forEach((col, c) => {
+    g.strokeStyle = col; g.lineWidth = 1.6; g.beginPath();
+    dens.forEach(([o, v], i) => { const y = base - Math.pow(v[c] / mx, 0.35) * (base - 14); i ? g.lineTo(xs(o), y) : g.moveTo(xs(o), y); });
+    g.stroke();
+    g.fillStyle = col; dens.forEach(([o, v]) => { g.beginPath(); g.arc(xs(o), base - Math.pow(v[c] / mx, 0.35) * (base - 14), 1.8, 0, Math.PI * 2); g.fill(); });
+  });
+  g.textAlign = "left"; g.fillStyle = "#c9cfdb"; g.fillText(`${P.name}: ${n} taps, weight per mm (compressed scale)`, 8, 13);
+  const widthMm = P.range * state.width;
+  $("profCap").textContent = state.perChannel
+    ? `Red (top curve at the sides) is still strong far from the center: red light travels farthest under the surface. Taps span ±${widthMm.toFixed(1)} mm at the current width; the vertical axis is compressed (power 0.35) so the tails are readable.`
+    : `Per-channel is off: all three channels share one averaged curve, so the scattering has no color.`;
+}
+
+// ---------- math ----------
+const V3 = { sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], norm: a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; } };
+const M = {
+  mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; },
+  persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; },
+  lookAt(e, c, u) { const z = V3.norm(V3.sub(e, c)), x = V3.norm(V3.cross(u, z)), y = V3.cross(z, x); return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -V3.dot(x, e), -V3.dot(y, e), -V3.dot(z, e), 1]); },
+  dir(m, d) { return V3.norm([m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]]); },
+  invView(v) { const r = new Float32Array([v[0], v[4], v[8], 0, v[1], v[5], v[9], 0, v[2], v[6], v[10], 0, 0, 0, 0, 1]); const t = [v[12], v[13], v[14]]; r[12] = -(r[0] * t[0] + r[4] * t[1] + r[8] * t[2]); r[13] = -(r[1] * t[0] + r[5] * t[1] + r[9] * t[2]); r[14] = -(r[2] * t[0] + r[6] * t[1] + r[10] * t[2]); return r; },
+  trs(t, r, s) {
+    const [cx, cy, cz] = r.map(Math.cos), [sx, sy, sz] = r.map(Math.sin);
+    const Rx = new Float32Array([1, 0, 0, 0, 0, cx, sx, 0, 0, -sx, cx, 0, 0, 0, 0, 1]);
+    const Ry = new Float32Array([cy, 0, -sy, 0, 0, 1, 0, 0, sy, 0, cy, 0, 0, 0, 0, 1]);
+    const Rz = new Float32Array([cz, sz, 0, 0, -sz, cz, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const S = new Float32Array([s[0], 0, 0, 0, 0, s[1], 0, 0, 0, 0, s[2], 0, 0, 0, 0, 1]);
+    const T = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, t[0], t[1], t[2], 1]);
+    return M.mul(T, M.mul(Ry, M.mul(Rx, M.mul(Rz, S))));
+  }
+};
+const lin = c => c.map(x => Math.pow(x, 2.2));
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: false, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+if (!gl.getExtension("EXT_color_buffer_float")) { fail("This demo needs the EXT_color_buffer_float WebGL extension (float render targets), which your GPU doesn't expose."); throw new Error("no float rt"); }
+const timerExt = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+const QUAD_VS = `#version 300 es
+layout(location=0) in vec3 aPos; void main(){ gl_Position = vec4(aPos.xy, 0.0, 1.0); }`;
+const COMMON = `
+int profOf(int id){ return id == 0 ? -1 : (id <= 2 ? 0 : (id == 3 ? 1 : 2)); }
+const float THICK[5] = float[5](0.0, 1.0, 0.12, 0.6, 0.45);
+const vec3 TINT[3] = vec3[3](vec3(1.0, 0.30, 0.18), vec3(1.0, 0.72, 0.42), vec3(0.32, 0.95, 0.45));`;
+
+const gbufProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNor;
+uniform mat4 uModel, uView, uProj;
+out vec3 vPosV; out vec3 vNorV; out vec3 vObj;
+void main(){
+  vObj = aPos;
+  vec4 v = uView * uModel * vec4(aPos, 1.0); vPosV = v.xyz;
+  vNorV = mat3(uView) * (transpose(inverse(mat3(uModel))) * aNor);
+  gl_Position = uProj * v;
+}`, `#version 300 es
+precision highp float;
+in vec3 vPosV; in vec3 vNorV; in vec3 vObj;
+uniform vec3 uColor; uniform int uId; uniform float uSss, uBump;
+layout(location=0) out vec4 oAlb; layout(location=1) out vec4 oNor; layout(location=2) out vec4 oDepth;
+float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float vnoise(vec3 x){
+  vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+             mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+void main(){
+  vec3 N = normalize(vNorV);
+  float skin = (uId == 1 || uId == 2) ? 1.0 : 0.0;
+  float h = (vnoise(vObj * 16.0) * 0.65 + vnoise(vObj * 38.0) * 0.35) * 0.0035 * uBump * skin;
+  vec3 dpdx = dFdx(vPosV), dpdy = dFdy(vPosV);
+  float dhdx = dFdx(h), dhdy = dFdy(h);
+  vec3 r1 = cross(dpdy, N), r2 = cross(N, dpdx);
+  float det = dot(dpdx, r1);
+  if (abs(det) > 1e-12) { vec3 grad = sign(det) * (dhdx * r1 + dhdy * r2); N = normalize(abs(det) * N - grad); }
+  oAlb = vec4(uColor, uSss);
+  oNor = vec4(N * 0.5 + 0.5, float(uId) / 4.0);
+  oDepth = vec4(-vPosV.z, 0.0, 0.0, 0.0);
+}`);
+
+const lightProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uAlb, uNor, uDepth;
+uniform vec3 uKeyV, uBackV, uUpV; uniform mat4 uInvView; uniform vec2 uTanHalf, uSize;
+uniform int uStripes, uBack, uSpecIn;
+layout(location=0) out vec4 oDiff; layout(location=1) out vec4 oSpec;
+${COMMON}
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy); vec2 uv = gl_FragCoord.xy / uSize;
+  float d = texelFetch(uDepth, p, 0).r;
+  if (d > 9000.0) { oDiff = vec4(0.0); oSpec = vec4(0.0); return; }
+  vec4 nn = texelFetch(uNor, p, 0);
+  vec3 N = normalize(nn.xyz * 2.0 - 1.0);
+  int id = int(nn.a * 4.0 + 0.5), prof = profOf(id);
+  vec3 P = vec3((uv * 2.0 - 1.0) * uTanHalf * d, -d), V = normalize(-P);
+  vec3 Pw = (uInvView * vec4(P, 1.0)).xyz;
+  float stripe = (uStripes == 1 && id > 0) ? mix(0.06, 1.0, step(0.5, fract(dot(Pw, vec3(1.0, 0.55, 0.25)) * 3.2))) : 1.0;
+  float ndl = max(dot(N, uKeyV), 0.0);
+  vec3 key = vec3(1.0, 0.95, 0.88) * 2.4 * ndl * stripe;
+  vec3 amb = mix(vec3(0.05, 0.045, 0.04), vec3(0.10, 0.12, 0.16), dot(N, uUpV) * 0.5 + 0.5);
+  vec3 diff = key + amb;
+  if (uBack == 1) {
+    diff += vec3(0.75, 0.82, 1.0) * 0.5 * max(dot(N, uBackV), 0.0);
+    if (prof >= 0) {
+      vec3 Hb = normalize(uBackV + N * 0.35);
+      float vd = pow(clamp(dot(V, -Hb), 0.0, 1.0), 3.0) * 3.0;
+      diff += TINT[prof] * vd * exp(-THICK[id] * 4.0) * 2.2;
+    }
+  }
+  float gloss = id == 0 ? 20.0 : (prof == 0 ? 48.0 : (prof == 1 ? 32.0 : 90.0));
+  float spe = id == 0 ? 0.1 : (prof == 0 ? 0.35 : (prof == 1 ? 0.25 : 0.6));
+  vec3 Hk = normalize(uKeyV + V);
+  vec3 spec = vec3(1.0, 0.95, 0.88) * pow(max(dot(N, Hk), 0.0), gloss) * spe * ndl * stripe * 2.4;
+  if (uSpecIn == 1) { oDiff = vec4(diff + spec / max(texelFetch(uAlb, p, 0).rgb, vec3(0.05)), 1.0); oSpec = vec4(0.0); }
+  else { oDiff = vec4(diff, 1.0); oSpec = vec4(spec, 1.0); }
+}`);
+
+const blurProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uSrc, uDepth, uNor, uAlb;
+uniform vec4 uKernel[75];
+uniform int uTaps, uNaive, uDepthScale, uFollow, uPerChannel;
+uniform vec2 uDir, uSize;
+uniform float uProjScale, uWidth, uNaivePx;
+out vec4 o;
+${COMMON}
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec3 c = texelFetch(uSrc, p, 0).rgb;
+  float z = texelFetch(uDepth, p, 0).r;
+  float str = texelFetch(uAlb, p, 0).a;
+  int id = int(texelFetch(uNor, p, 0).a * 4.0 + 0.5), prof = profOf(id);
+  if (uNaive == 1) {
+    vec3 s = vec3(0.0);
+    for (int i = 0; i < 25; i++) {
+      if (i >= uTaps) break;
+      vec4 k = uKernel[i];
+      float w = (k.r + k.g + k.b) / 3.0;
+      s += texture(uSrc, (gl_FragCoord.xy + uDir * k.w / 6.0 * uNaivePx) / uSize).rgb * w;
+    }
+    o = vec4(s, 1.0); return;
+  }
+  if (prof < 0 || str <= 0.0 || z > 9000.0) { o = vec4(c, 1.0); return; }
+  float zz = uDepthScale == 1 ? z : 5.0;
+  float mmToWorld = 0.025;
+  float pxPerMm = uWidth * mmToWorld * uProjScale / zz;
+  float worldSpan = max(1e-4, uWidth * mmToWorld * 3.0);
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 25; i++) {
+    if (i >= uTaps) break;
+    vec4 k = uKernel[prof * 25 + i];
+    vec2 uv = (gl_FragCoord.xy + uDir * k.w * pxPerMm) / uSize;
+    vec3 t = texture(uSrc, uv).rgb;
+    if (uFollow == 1) {
+      float zs = texture(uDepth, uv).r;
+      float f = clamp(abs(zs - z) / worldSpan, 0.0, 1.0);
+      if (texture(uAlb, uv).a <= 0.0) f = 1.0;
+      t = mix(t, c, f);
+    }
+    vec3 w = uPerChannel == 1 ? k.rgb : vec3((k.r + k.g + k.b) / 3.0);
+    s += t * w;
+  }
+  o = vec4(mix(c, s, str), 1.0);
+}`);
+
+const compProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uAlb, uNor, uDepth, uD0, uDh, uDb, uSpec;
+uniform int uView, uSpecSplit;
+uniform vec2 uOff, uSize, uTex;
+uniform float uSplit;
+out vec4 o;
+${COMMON}
+vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 tone(vec3 c){ return pow(aces(c * 0.9), vec3(1.0 / 2.2)); }
+void main(){
+  vec2 uv = (gl_FragCoord.xy - uOff) / uSize;
+  ivec2 p = clamp(ivec2(uv * uTex), ivec2(0), ivec2(uTex) - 1);
+  float z = texelFetch(uDepth, p, 0).r; bool bg = z > 9000.0;
+  vec4 A = texelFetch(uAlb, p, 0); vec4 nn = texelFetch(uNor, p, 0);
+  vec3 D0 = texture(uD0, uv).rgb, Dh = texture(uDh, uv).rgb, Db = texture(uDb, uv).rgb, S = texture(uSpec, uv).rgb;
+  vec3 bgc = vec3(0.045, 0.05, 0.065);
+  vec3 col;
+  if (uView == 0) {
+    bool left = uSplit > 0.0 && gl_FragCoord.x - uOff.x < uSplit;
+    vec3 D = left ? D0 : Db;
+    col = bg ? bgc : tone(A.rgb * D + S);
+    if (uSplit > 0.0 && abs(gl_FragCoord.x - uOff.x - uSplit) < 1.0) col = vec3(1.0);
+  }
+  else if (uView == 1) col = bg ? vec3(0.0) : vec3(1.0 - clamp((z - 2.0) / 10.0, 0.0, 1.0));
+  else if (uView == 2) col = bg ? bgc : nn.xyz;
+  else if (uView == 3) { int prof = profOf(int(nn.a * 4.0 + 0.5)); col = (bg || prof < 0) ? vec3(0.19, 0.2, 0.23) * (bg ? 0.5 : 1.0) : TINT[prof] * (0.35 + 0.65 * A.a); }
+  else if (uView == 4) col = bg ? bgc : tone(D0);
+  else if (uView == 5) col = bg ? bgc : tone(Dh);
+  else if (uView == 6) col = bg ? bgc : tone(Db);
+  else col = bg ? bgc : tone(S * 2.0);
+  o = vec4(col, 1.0);
+}`);
+
+// ---------- meshes ----------
+function mesh(pos, nor, idx) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  if (nor) { const n = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, n); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nor), gl.STATIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0); }
+  let count = 0;
+  if (idx) { const i = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW); count = idx.length; }
+  gl.bindVertexArray(null);
+  return { vao, count };
+}
+function cube() {
+  const P = [], N = [], I = [];
+  [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]].forEach((n, f) => {
+    const u = n[1] !== 0 ? [1, 0, 0] : [0, 1, 0], v = V3.cross(n, u);
+    const q = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [0.5 * (n[0] + a * u[0] + b * v[0]), 0.5 * (n[1] + a * u[1] + b * v[1]), 0.5 * (n[2] + a * u[2] + b * v[2])]);
+    q.forEach(p => { P.push(...p); N.push(...n); });
+    const o = f * 4, cr = V3.cross(V3.sub(q[1], q[0]), V3.sub(q[2], q[0]));
+    if (V3.dot(cr, n) > 0) I.push(o, o + 1, o + 2, o, o + 2, o + 3); else I.push(o, o + 2, o + 1, o, o + 3, o + 2);
+  });
+  return mesh(P, N, I);
+}
+function sphere(seg, rings) {
+  const P = [], I = [];
+  for (let r = 0; r <= rings; r++) { const th = Math.PI * r / rings; for (let s = 0; s <= seg; s++) { const ph = 2 * Math.PI * s / seg; P.push(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)); } }
+  const W = seg + 1;
+  for (let r = 0; r < rings; r++) for (let s = 0; s < seg; s++) { const a = r * W + s, b = a + W; I.push(a, a + 1, b, a + 1, b + 1, b); }
+  return mesh(P, P, I);
+}
+const cubeM = cube(), ballM = sphere(72, 48), quad = mesh([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], null, null);
+
+// ---------- scene ----------
+const SKINC = [0.86, 0.60, 0.48];
+const objs = [];
+const add = (m, t, r, s, c, id, sss) => objs.push({ mesh: m, M: M.trs(t, r, s), c: lin(c), id, sss });
+add(cubeM, [0, -1.05, 0], [0, 0, 0], [30, 0.1, 30], [0.36, 0.36, 0.38], 0, 0);
+add(ballM, [0, 0.3, 0], [0, 0, 0], [0.95, 1.12, 1.0], SKINC, 1, 1);
+add(ballM, [0, 0.22, 0.93], [0.2, 0, 0], [0.16, 0.26, 0.2], SKINC, 1, 1);
+add(ballM, [-0.97, 0.28, -0.05], [0, 0.15, 0], [0.07, 0.3, 0.2], SKINC, 2, 1);
+add(ballM, [0.97, 0.28, -0.05], [0, -0.15, 0], [0.07, 0.3, 0.2], SKINC, 2, 1);
+add(ballM, [2.7, -0.35, 0.3], [0, 0, 0], [0.7, 0.7, 0.7], [0.93, 0.86, 0.72], 3, 1);
+add(cubeM, [-2.7, -0.5, 0.4], [0.3, 0.6, 0.2], [0.85, 0.85, 0.85], [0.36, 0.68, 0.44], 4, 1);
+
+// ---------- targets ----------
+let W = 0, H = 0, T = null, rectsDirty = true;
+function tex(fmt, w, h, filter) { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+function fbo(colors, depth) {
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  colors.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  if (depth) gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+  gl.drawBuffers(colors.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("framebuffer incomplete");
+  return f;
+}
+function makeTargets() {
+  if (T) for (const k in T) { const o = T[k]; if (o instanceof WebGLTexture) gl.deleteTexture(o); else if (o instanceof WebGLFramebuffer) gl.deleteFramebuffer(o); else if (o instanceof WebGLRenderbuffer) gl.deleteRenderbuffer(o); }
+  const t = {};
+  t.alb = tex(gl.RGBA8, W, H, gl.NEAREST); t.nor = tex(gl.RGBA8, W, H, gl.NEAREST); t.z = tex(gl.R32F, W, H, gl.NEAREST);
+  t.depth = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, t.depth); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, W, H);
+  t.g = fbo([t.alb, t.nor, t.z], t.depth);
+  t.d0 = tex(gl.RGBA16F, W, H, gl.LINEAR); t.spec = tex(gl.RGBA16F, W, H, gl.LINEAR); t.fL = fbo([t.d0, t.spec]);
+  t.dh = tex(gl.RGBA16F, W, H, gl.LINEAR); t.fH = fbo([t.dh]);
+  t.db = tex(gl.RGBA16F, W, H, gl.LINEAR); t.fB = fbo([t.db]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  T = t;
+}
+function resize() {
+  const w = Math.max(1, Math.round(canvas.clientWidth)), h = Math.max(1, Math.round(canvas.clientHeight));
+  if (w !== W || h !== H) { W = w; H = h; canvas.width = w; canvas.height = h; makeTargets(); stripEl.style.setProperty("--ar", (w / h).toFixed(3)); rectsDirty = true; }
+  if (rectsDirty) {
+    rectsDirty = false;
+    const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+    for (const t of thumbs) { const r = t.el.getBoundingClientRect(); t.rect = [Math.round((r.left - cr.left + 1) * sx), Math.round((cr.bottom - r.bottom + 1) * sy), Math.round((r.width - 2) * sx), Math.round((r.height - 2) * sy)]; }
+  }
+}
+window.addEventListener("resize", () => { rectsDirty = true; drawProfile(); });
+
+// ---------- camera ----------
+const cam = { yaw: 1.42, pitch: 0.12, dist: 6.2, tgt: [0, 0.15, 0] };
+const camDefault = JSON.stringify(cam);
+let drag = null; const pointers = new Map();
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); if (!pointers.size) drag = null; });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [c, d] = [...pointers.values()]; const d1 = Math.hypot(c[0] - d[0], c[1] - d[1]);
+    if (d0 > 0 && d1 > 0) cam.dist = Math.min(25, Math.max(1.2, cam.dist * d0 / d1));
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) { const s = cam.dist * 0.0016, cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw); cam.tgt[0] += sy * dx * s; cam.tgt[2] -= cy * dx * s; cam.tgt[1] += dy * s; }
+  else { cam.yaw += dx * 0.006; cam.pitch = Math.max(-0.6, Math.min(1.4, cam.pitch + dy * 0.006)); }
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(25, Math.max(1.2, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+$("reset").addEventListener("click", () => Object.assign(cam, JSON.parse(camDefault)));
+$("closeup").addEventListener("click", () => { Object.assign(cam, { yaw: 0.35, pitch: 0.08, dist: 2.2, tgt: [0.97, 0.28, -0.05] }); state.back = true; $("back").checked = true; });
+
+// ---------- timers ----------
+const timers = {};
+function tBegin(name) { if (!timerExt) return false; const t = timers[name] || (timers[name] = { q: null, ms: null }); if (t.q) return false; t.q = gl.createQuery(); gl.beginQuery(timerExt.TIME_ELAPSED_EXT, t.q); return true; }
+function tEnd(s) { if (s) gl.endQuery(timerExt.TIME_ELAPSED_EXT); }
+function tPoll() {
+  if (!timerExt) return; const dj = gl.getParameter(timerExt.GPU_DISJOINT_EXT);
+  for (const k in timers) { const t = timers[k]; if (t.q && gl.getQueryParameter(t.q, gl.QUERY_RESULT_AVAILABLE)) { if (!dj) { const ms = gl.getQueryParameter(t.q, gl.QUERY_RESULT) / 1e6; t.ms = t.ms == null ? ms : t.ms * 0.85 + ms * 0.15; } gl.deleteQuery(t.q); t.q = null; } }
+}
+const msTxt = k => !timerExt ? "n/a in this browser" : (timers[k] && timers[k].ms != null) ? timers[k].ms.toFixed(2) + " ms" : "measuring…";
+
+// ---------- frame ----------
+const FOV = 0.8;
+function bindTex(unit, t) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); }
+let frame = 0, fpsT = performance.now(), fpsN = 0, fps = 0;
+function render(now) {
+  requestAnimationFrame(render);
+  fpsN++; if (now - fpsT > 500) { fps = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; }
+  resize(); tPoll();
+  const eye = [cam.tgt[0] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), cam.tgt[1] + cam.dist * Math.sin(cam.pitch), cam.tgt[2] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw)];
+  const view = M.lookAt(eye, cam.tgt, [0, 1, 0]), proj = M.persp(FOV, W / H, 0.05, 100);
+  const th = Math.tan(FOV / 2);
+  const az = state.az * Math.PI / 180, el = state.el * Math.PI / 180;
+  const keyW = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];
+  gl.disable(gl.BLEND);
+
+  // 1) G-buffer, 2) lighting split into diffuse and specular
+  const tg = tBegin("g");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.g); gl.viewport(0, 0, W, H);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 1, [0.5, 0.5, 1, 0]); gl.clearBufferfv(gl.COLOR, 2, [10000, 0, 0, 0]); gl.clearBufferfv(gl.DEPTH, 0, [1]);
+  gl.useProgram(gbufProg.p);
+  gl.uniformMatrix4fv(gbufProg.u.uView, false, view); gl.uniformMatrix4fv(gbufProg.u.uProj, false, proj); gl.uniform1f(gbufProg.u.uBump, state.bump);
+  for (const o of objs) {
+    gl.uniformMatrix4fv(gbufProg.u.uModel, false, o.M); gl.uniform3fv(gbufProg.u.uColor, o.c); gl.uniform1i(gbufProg.u.uId, o.id); gl.uniform1f(gbufProg.u.uSss, o.sss);
+    gl.bindVertexArray(o.mesh.vao); gl.drawElements(gl.TRIANGLES, o.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.bindVertexArray(quad.vao);
+  for (let u = 0; u < 7; u++) bindTex(u, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.fL); gl.useProgram(lightProg.p);
+  bindTex(0, T.alb); bindTex(1, T.nor); bindTex(2, T.z);
+  const lu = lightProg.u;
+  gl.uniform1i(lu.uAlb, 0); gl.uniform1i(lu.uNor, 1); gl.uniform1i(lu.uDepth, 2);
+  gl.uniform3fv(lu.uKeyV, M.dir(view, keyW)); gl.uniform3fv(lu.uBackV, M.dir(view, V3.norm([-0.35, 0.25, -1]))); gl.uniform3fv(lu.uUpV, M.dir(view, [0, 1, 0]));
+  gl.uniformMatrix4fv(lu.uInvView, false, M.invView(view)); gl.uniform2f(lu.uTanHalf, th * W / H, th); gl.uniform2f(lu.uSize, W, H);
+  gl.uniform1i(lu.uStripes, state.stripes ? 1 : 0); gl.uniform1i(lu.uBack, state.back ? 1 : 0); gl.uniform1i(lu.uSpecIn, state.tech === 2 && !state.specSplit ? 1 : 0);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  tEnd(tg);
+
+  // 3) separable SSS: horizontal then vertical
+  let dh = T.d0, db = T.d0;
+  const ts = tBegin("sss");
+  if (state.tech > 0) {
+    gl.useProgram(blurProg.p);
+    const bu = blurProg.u;
+    if (kernelsDirty) { gl.uniform4fv(bu.uKernel, kernels); kernelsDirty = false; }
+    bindTex(1, T.z); bindTex(2, T.nor); bindTex(3, T.alb);
+    gl.uniform1i(bu.uSrc, 0); gl.uniform1i(bu.uDepth, 1); gl.uniform1i(bu.uNor, 2); gl.uniform1i(bu.uAlb, 3);
+    gl.uniform1i(bu.uTaps, state.taps); gl.uniform1i(bu.uNaive, state.tech === 1 ? 1 : 0);
+    gl.uniform1i(bu.uDepthScale, state.depthScale ? 1 : 0); gl.uniform1i(bu.uFollow, state.follow ? 1 : 0); gl.uniform1i(bu.uPerChannel, state.perChannel ? 1 : 0);
+    gl.uniform2f(bu.uSize, W, H); gl.uniform1f(bu.uProjScale, H / (2 * th)); gl.uniform1f(bu.uWidth, state.width); gl.uniform1f(bu.uNaivePx, state.naivePx);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fH); bindTex(0, T.d0); gl.uniform2f(bu.uDir, 1, 0); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fB); bindTex(0, T.dh); gl.uniform2f(bu.uDir, 0, 1); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    dh = T.dh; db = T.db;
+  }
+  tEnd(ts);
+
+  // 4) composite: albedo × blurred diffuse + specular
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.useProgram(compProg.p);
+  bindTex(0, T.alb); bindTex(1, T.nor); bindTex(2, T.z); bindTex(3, T.d0); bindTex(4, dh); bindTex(5, db); bindTex(6, T.spec);
+  const cu = compProg.u;
+  gl.uniform1i(cu.uAlb, 0); gl.uniform1i(cu.uNor, 1); gl.uniform1i(cu.uDepth, 2); gl.uniform1i(cu.uD0, 3); gl.uniform1i(cu.uDh, 4); gl.uniform1i(cu.uDb, 5); gl.uniform1i(cu.uSpec, 6);
+  gl.uniform2f(cu.uTex, W, H);
+  const comp = (v, x, y, w, h, split) => { gl.viewport(x, y, w, h); gl.uniform1i(cu.uView, v); gl.uniform2f(cu.uOff, x, y); gl.uniform2f(cu.uSize, w, h); gl.uniform1f(cu.uSplit, split); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); };
+  comp(state.view, 0, 0, W, H, state.split / 100 * W);
+  if (state.strip) for (const t of thumbs) { const [x, y, w, h] = t.rect || [0, 0, 0, 0]; if (w > 4 && h > 4) comp(t.v, x, y, w, h, 0); }
+
+  if (frame++ % 15 === 0) {
+    $("hudTime").innerHTML = `<b>${fps.toFixed(0)} fps</b>` + (timerExt ? ` · SSS ${state.tech ? msTxt("sss") : "off"}` : "");
+    $("gG").textContent = msTxt("g"); $("gS").textContent = state.tech ? msTxt("sss") : "skipped";
+    $("sTaps").textContent = state.tech ? `${state.taps} + ${state.taps} = ${state.taps * 2}` : "0";
+  }
+}
+syncTech(); setView(0); buildKernels(); drawProfile();
+try { resize(); requestAnimationFrame(render); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSAO: a walkthrough of the SSAO Lab</title>
+<script>if (window.self !== window.top) document.documentElement.classList.add("in-panel");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tutorial.css">
+</head>
+<body>
+<nav class="page-nav"><a href="index.html#tutorial">Open the lab with this tutorial</a><a href="../../index.html#ssao">All labs</a></nav>
+<main class="tutorial">
+<h1>SSAO: a walkthrough of the SSAO Lab</h1>
+<p>Each step says what to look at in the lab.</p>
+<h2>The one idea</h2>
+<p>Ambient light is light from the whole sky. A point out on an open floor sees the entire sky above it. A point in a corner, under a table or between two boxes sees only part of it, so it should receive less ambient light. <strong>Ambient occlusion (AO)</strong> is the fraction of that sky a point <em>can</em> see within a short radius: 1.0 = fully open, 0.0 = completely enclosed.</p>
+<p>Real AO would trace rays in 3D. <strong>Screen-space AO</strong> cheats: it only looks at what's already on screen (the depth buffer) and asks, for a few sample points around each pixel, "is this point buried inside something?"</p>
+<p><span class="diagram-wrap"><img class="diagram" alt="SSAO hemisphere samples near a wall" src="ssao-diagram.svg" /></span></p>
+<p>That's the whole technique: scatter samples around each pixel, count how many are buried, and darken the ambient light by that fraction.</p>
+<h2>Step 1: The G-buffer (thumbnails 1 and 2)</h2>
+<p>SSAO runs after the geometry pass and needs two things per pixel:</p>
+<ul>
+<li><strong>Linear depth:</strong> the distance from the camera along the view axis. It's stored in a single R32F channel, 4 bytes.</li>
+<li><strong>The view-space normal:</strong> which way the surface faces. It's packed into RGBA8 as <code>n * 0.5 + 0.5</code>.</li>
+</ul>
+<p>You don't need a position texture. A pixel's 3D position can be <strong>rebuilt</strong> from its depth and its screen position, because the camera's field of view tells you how wide the view is at any depth:</p>
+<pre><code class="language-glsl">// tanHalf = (tan(fov/2) * aspect, tan(fov/2))
+vec3 posAt(vec2 uv) {
+  float z = texture(depth, uv).r;
+  return vec3((uv * 2.0 - 1.0) * tanHalf * z, -z);   // view-space position
+}
+</code></pre>
+<p>This is also the biggest performance win. Each pixel reads depth up to 64 times, so going from a 16-byte position to a 4-byte depth cuts memory traffic by 4×.</p>
+<h2>Step 2: The sample kernel (the small diagram in the panel)</h2>
+<p>The kernel is a fixed set of 3D offsets you place around each pixel. It's generated once on the CPU:</p>
+<pre><code class="language-js">for (let i = 0; i &lt; n; i++) {
+  let p = randomPointInHemisphere();           // z ≥ 0 means &quot;above the surface&quot;
+  let s = i / n;
+  p *= lerp(0.1, 1.0, s * s);                  // pack more samples close to the center
+}
+</code></pre>
+<p>Two design choices:</p>
+<ul>
+<li><strong>Hemisphere, not sphere.</strong> Pick <strong>Crytek</strong> in the lab. Its samples fill a whole sphere, so on a flat floor half of them are underground and always count as buried. Flat surfaces come out about 50% gray, which was the famous look of early SSAO (Crysis, 2007). Orienting the samples in a hemisphere along the normal fixes that.</li>
+<li><strong>Denser near the center.</strong> Close occluders block more of the sky than distant ones, so they should count more.</li>
+</ul>
+<h2>Step 3: The test (thumbnail 4, "AO raw")</h2>
+<p>For each pixel, and for each sample:</p>
+<ol>
+<li><strong>Orient the kernel</strong> to the surface by building a rotation (a TBN matrix) from the normal.</li>
+<li><strong>Place the sample</strong> at <code>p + TBN * kernel[i] * radius</code>.</li>
+<li><strong>Project it</strong> to the screen to find which pixel it lands on.</li>
+<li><strong>Read the depth there.</strong> If the stored surface is <em>closer to the camera</em> than the sample, the sample is behind something, so it's buried.</li>
+</ol>
+<pre><code class="language-glsl">vec3 s = p + TBN * kernel[i] * radius;
+vec4 c = proj * vec4(s, 1.0);
+vec2 suv = c.xy / c.w * 0.5 + 0.5;            // where on screen?
+float sceneZ = -texture(depth, suv).r;         // what's actually there?
+float rangeCheck = smoothstep(0.0, 1.0, radius / abs(p.z - sceneZ));
+occlusion += (sceneZ &gt;= s.z + bias ? 1.0 : 0.0) * rangeCheck;
+...
+ao = 1.0 - occlusion / float(n);
+</code></pre>
+<p>Two of those terms fix specific artifacts:</p>
+<ul>
+<li><strong>Bias</strong> stops a surface from occluding itself because of depth precision. Set Bias to 0 and flat areas get blotchy. It's the same problem as shadow acne.</li>
+<li><strong>Range check:</strong> turn it off in the lab and look at the edges of the table and blocks against the far wall. Dark <strong>halos</strong> appear. A sample next to the table's edge "lands" on the table, which is a meter in front, and counts as buried even though the table is far away. The range check fades out occluders that are much farther than the radius.</li>
+</ul>
+<h2>Step 4: Random rotation (thumbnail 3, "Noise")</h2>
+<p>With only 16 samples, every pixel uses the <em>same</em> pattern, so you get smooth but <strong>banded</strong> rings. Turn off <strong>Random rotation</strong> to see them.</p>
+<p>The fix is to rotate the kernel differently for each pixel, using a tiny <strong>4×4 texture of random rotation vectors</strong> tiled across the screen:</p>
+<pre><code class="language-glsl">vec3 rv = texelFetch(noise, ivec2(gl_FragCoord.xy) &amp; 3, 0).xyz;
+vec3 T = normalize(rv - n * dot(rv, n));     // random tangent in the surface plane
+mat3 TBN = mat3(T, cross(n, T), n);
+</code></pre>
+<p>Neighboring pixels now sample in 16 different directions. Banding turns into <strong>fine noise</strong>, which is easy to blur away. Look at thumbnail 4 with Blur set to <em>None</em>: you can see the 4×4 pattern.</p>
+<h3>What the noise tile is for</h3>
+<p>It turns <strong>banding into noise</strong>, and noise is easy to blur away.</p>
+<p><strong>The problem it solves.</strong> With only 16 samples, you test 16 fixed directions around each pixel. That's a coarse approximation, so every pixel's answer has some error. Without the noise tile, every pixel uses <strong>the same 16 directions</strong>, so neighboring pixels make <strong>the same error</strong>. Errors that line up across the screen form visible structure: rings and bands that follow the geometry.</p>
+<p><strong>What the tile does.</strong> Each pixel picks one of 16 random rotations based on its position (<code>gl_FragCoord.xy &amp; 3</code>) and rotates the whole kernel by it before sampling. Now neighboring pixels test <strong>different</strong> directions:</p>
+<ul>
+<li>The total error is about the same, but it's <strong>scattered</strong> from pixel to pixel instead of lined up. Your eye reads that as fine grain, not shapes.</li>
+<li>Any 4×4 block of pixels together has tested 16 rotations × 16 samples = <strong>256 different directions</strong>, even though each pixel only paid for 16.</li>
+</ul>
+<p><strong>Why the blur goes with it.</strong> The blur collects that spread-out information. A <strong>4×4 box blur</strong> averages exactly one copy of the tile, so every pixel's result combines all 16 rotations. The grain disappears and you end up with something close to the 256-direction answer, without visible structure.</p>
+<p><strong>Why a small repeating tile instead of fully random noise per pixel?</strong></p>
+<ul>
+<li><strong>It's matched to the blur.</strong> Because the pattern repeats exactly every 4 pixels, a 4×4 average always covers all 16 rotations. With fully random noise there's no such guarantee, so you'd need a bigger, more expensive blur.</li>
+<li><strong>It's cheap.</strong> 16 texels stay in the texture cache, so the lookup costs almost nothing.</li>
+<li><strong>It's stable.</strong> The same pixel gets the same rotation every frame, so the result doesn't flicker.</li>
+</ul>
+<p>The trade-off is that 4×4 only gives 16 rotations. A bigger tile gives more variety but needs a bigger blur, and a smaller one doesn't break up the banding enough. 4×4 is the classic balance.</p>
+<p><strong>What modern engines do instead.</strong> They usually use <strong>blue noise</strong> or <strong>interleaved gradient noise</strong> (random values spread out evenly, with no clumps), and <strong>change it every frame</strong>. TAA then averages the results over time, so 16 samples per frame add up to hundreds over a few frames. Same idea, done across time instead of across neighboring pixels.</p>
+<h2>Step 5: Blur (thumbnail 5, "AO blurred")</h2>
+<ul>
+<li><strong>4×4 box blur:</strong> average exactly the 4×4 block that the noise tile repeats over. All 16 rotations are averaged together, so the pattern disappears, and it's very cheap.</li>
+<li><strong>Bilateral blur:</strong> a Gaussian blur that <strong>lowers the weight of neighbors at a different depth</strong>. AO doesn't bleed across object edges, such as from the table onto the wall behind it. It runs as two passes (horizontal and vertical) to stay cheap.</li>
+</ul>
+<pre><code class="language-glsl">float w = gaussian(i) * exp(-abs(zNeighbor - zCenter) / (0.03 * zCenter + 0.02));
+</code></pre>
+<p>In a real engine, TAA often does most of this denoising for free across frames, so the blur can be lighter.</p>
+<h2>Step 6: Apply it to the ambient term only (thumbnails 6 and 7)</h2>
+<pre><code class="language-glsl">color = albedo * (ambient * ao + sunLight);
+</code></pre>
+<p>AO multiplies <strong>only the ambient/sky light</strong>. The sun is direct light, and its shadow map already handles what blocks it. Darkening it again would make shadowed areas too dark and corners muddy.</p>
+<p>Move <strong>Split compare</strong> to 50%: the left half is without AO, the right half with it. Without AO, objects look like they float. With it, they sit on the floor.</p>
+<h2>Step 7: Better estimators (techniques 3 and 4)</h2>
+<p>The hemisphere test only asks a yes/no question per sample. Later techniques measure <em>how much</em> each neighbor blocks:</p>
+<ul>
+<li><strong>SAO / Alchemy (2011–12):</strong> sample a spiral of neighbors <strong>in screen space</strong>, rebuild each one's 3D position, and add up <code>max(0, v·n − bias) / |v|²</code>. A neighbor that's close (small |v|) and high above the surface (large v·n) blocks a lot of sky. Neighbors fade out smoothly at the radius. Smooth result for few samples, with no projection math per sample.</li>
+<li><strong>HBAO (2008):</strong> march a few <strong>rays across the screen</strong> from the pixel. Along each ray, track the highest <strong>horizon</strong> angle any neighbor reaches above the surface. Higher horizon means less sky. This is closer to the real definition of AO, and it's the ancestor of GTAO, which most current engines use.</li>
+</ul>
+<h2>Step 8: Performance</h2>
+<p>The cost is roughly <strong>samples × AO pixels</strong>, and the panel shows it as "depth reads per frame." Three levers, from biggest to smallest:</p>
+<ol>
+<li><strong>Resolution:</strong> half-res AO is ¼ of the pixels. AO is soft and low-frequency, so the loss is hard to see. That's why engines do it.</li>
+<li><strong>Bytes per read:</strong> depth only (4 B) instead of positions (16 B).</li>
+<li><strong>Sample count:</strong> 8–16 with noise and blur usually beats 64 without.</li>
+</ol>
+<h2>Limits of doing it in screen space</h2>
+<p>The depth buffer only knows the <strong>front surface</strong> of what's visible, which causes three known problems:</p>
+<ul>
+<li><strong>Off-screen objects can't occlude.</strong> Pan the camera until the blocks touch the screen edge: their AO on the floor fades.</li>
+<li><strong>Everything is assumed infinitely thick.</strong> A thin pole occludes as if it were a solid wall behind it.</li>
+<li><strong>Hidden geometry is unknown.</strong> Whatever is behind the front object doesn't count.</li>
+</ul>
+<p>That's why engines with ray tracing replace SSAO with <strong>RTAO</strong>: ray-traced AO, which works in the full 3D scene.</p>
+<h2>The whole pipeline, in one breath</h2>
+<p><strong>G-buffer</strong> (depth + normal) → <strong>per pixel:</strong> rebuild the position, rotate the kernel by noise, test each sample against depth (with bias and range check) → <strong>blur</strong> the noise away → <strong>multiply the ambient light</strong> by the result.</p>
+</main>
+</body>
+</html>

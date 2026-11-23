@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessellation and Geometry Shader Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport with a pipeline-stage strip, instrument panel on the right; stacks on narrow screens. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #7fd6a4;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 380px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas#c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas#c:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.82); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 140px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.note { font-size: 12.5px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid #e3b563; border-radius: 0; padding: 9px 12px; margin-top: 10px; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 8px; }
+.pipe { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font: 500 11px var(--font-mono); margin-top: 10px; color: var(--muted); }
+.pipe span { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); }
+.pipe span.t { border-color: var(--accent); color: var(--accent); }
+#dom { display: block; width: 100%; height: 190px; margin-top: 8px; background: #0f1217; border: 1px solid var(--line); border-radius: 6px; }
+.kcap { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.row { display: grid; grid-template-columns: 108px 1fr 58px; align-items: center; gap: 8px; margin: 5px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+.dim { opacity: .4; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+button.p.on { border-color: var(--accent); color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+pre#code { margin: 8px 0 0; font: 11.5px/1.5 var(--font-mono); background: #0f1217; border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; white-space: pre; color: #cfd6e2; max-height: 340px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.heatkey { height: 10px; border-radius: 3px; background: linear-gradient(90deg, #1a33cc, #1acbb3, #f2d933, #ff3319, #ffffff); margin-top: 8px; }
+.heatlbl { display: flex; justify-content: space-between; font: 11px var(--font-mono); color: var(--muted); }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL view of a tessellated surface"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudIn">patches</span>
+      <span class="chip" id="hudOut">triangles</span>
+      <span class="chip" id="hudGs">gs</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll or pinch to zoom · right-drag to pan</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Tessellation and geometry shader lab</h1>
+      <p class="sub">Both stages make new geometry on the GPU. Tessellation turns a few coarse <em>patches</em> into many triangles, as many as each patch needs. A geometry shader then sees one finished triangle at a time and can change it, drop it or emit extra ones.</p>
+      <div class="pipe"><span>vertex</span>→<span class="t">TCS</span>→<span class="t">tessellator</span>→<span class="t">TES</span>→<span class="t">geometry</span>→<span>fragment</span></div>
+      <div class="note">Browsers have neither stage: WebGL 2 and WebGPU both leave them out. This lab runs the same steps by other means. JavaScript computes the levels and applies the tessellator's subdivision rules; an instanced vertex shader does the evaluation and the geometry-shader work. The code box below shows the real OpenGL 4 GLSL for whatever is selected.</div>
+    </div>
+
+    <section>
+      <h2>1. Patches (the input)</h2>
+      <div class="btns" id="scenes">
+        <button class="p on" type="button" data-s="0">Terrain: 100 quads</button>
+        <button class="p" type="button" data-s="1">Bézier: 4 × 16 points</button>
+        <button class="p" type="button" data-s="2">Icosahedron: 20 triangles</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Control shader: how many triangles?</h2>
+      <select id="lmode" aria-label="How tessellation levels are chosen">
+        <option value="0">Manual: one inner and one outer level</option>
+        <option value="1" selected>By distance, one level per edge (no cracks)</option>
+        <option value="2">By distance, one level per patch (cracks)</option>
+      </select>
+      <div class="explain" id="exL"></div>
+      <div class="row" id="rInner"><label for="inner">Inner level</label><input id="inner" type="range" min="1" max="64" step="0.1" value="8"><output id="innerV"></output></div>
+      <div class="row" id="rOuter"><label for="outer">Outer level</label><input id="outer" type="range" min="1" max="64" step="0.1" value="8"><output id="outerV"></output></div>
+      <div class="row" id="rPx"><label for="px">Target edge</label><input id="px" type="range" min="4" max="80" step="1" value="26"><output id="pxV"></output></div>
+      <div class="row" id="rMax"><label for="maxL">Max level</label><input id="maxL" type="range" min="1" max="64" step="1" value="32"><output id="maxLV"></output></div>
+    </section>
+
+    <section>
+      <h2>3. Tessellator: the fixed-function part</h2>
+      <div class="row"><label for="spacing">Spacing</label><select id="spacing"><option value="0">equal_spacing</option><option value="1" selected>fractional_even_spacing</option><option value="2">fractional_odd_spacing</option></select></div>
+      <canvas id="dom" aria-label="How the tessellator subdivides one patch in its own coordinates"></canvas>
+      <div class="kcap" id="domCap"></div>
+    </section>
+
+    <section>
+      <h2>4. Evaluation shader: where does each new vertex go?</h2>
+      <div class="row"><label for="disp">Displacement</label><input id="disp" type="range" min="0" max="8" step="0.1" value="4"><output id="dispV"></output></div>
+      <div class="row" id="rRound"><label for="round">Roundness</label><input id="round" type="range" min="0" max="1" step="0.01" value="1"><output id="roundV"></output></div>
+      <div class="checks"><label><input type="checkbox" id="anim" checked> Animate (Bézier control points, grass wind)</label></div>
+    </section>
+
+    <section>
+      <h2>5. Geometry shader: one triangle in, anything out</h2>
+      <select id="gs" aria-label="Geometry shader">
+        <option value="0" selected>Pass-through: emit the triangle unchanged</option>
+        <option value="1">Explode: move and shrink each triangle</option>
+        <option value="2">Normals: emit a line at every vertex</option>
+        <option value="3">Grass: emit an extra blade per triangle</option>
+      </select>
+      <div class="explain" id="exG"></div>
+      <div class="row"><label for="gsAmt">Amount</label><input id="gsAmt" type="range" min="0" max="1" step="0.01" value="0.35"><output id="gsAmtV"></output></div>
+      <div class="row" id="rShrink"><label for="shrink">Shrink</label><input id="shrink" type="range" min="0" max="0.9" step="0.01" value="0.25"><output id="shrinkV"></output></div>
+    </section>
+
+    <section>
+      <h2>Display</h2>
+      <div class="checks">
+        <label><input type="checkbox" id="wire" checked> Wireframe overlay</label>
+        <label><input type="checkbox" id="pedge" checked> Patch borders</label>
+        <label><input type="checkbox" id="smooth" checked> Smooth normals (off = one flat normal per triangle)</label>
+        <label><input type="checkbox" id="net" checked> Bézier control net</label>
+        <label><input type="checkbox" id="stripOn" checked> Show pipeline stages under the scene</label>
+      </div>
+      <div class="row" style="margin-top:8px"><label for="view">View</label><select id="view">
+        <option value="0">Final (after the geometry shader)</option>
+        <option value="10">Patches: what goes in</option>
+        <option value="2">Tessellation levels</option>
+        <option value="3">Tess coordinates (gl_TessCoord)</option>
+        <option value="1">After evaluation, colored by patch</option>
+      </select></div>
+      <div id="lgHeat" style="display:none"><div class="heatkey"></div><div class="heatlbl"><span>level 1</span><span>8</span><span>64</span></div><p class="kcap">The middle of each patch shows its inner level. The band along each border shows that edge's outer level.</p></div>
+    </section>
+
+    <section>
+      <h2>The real GLSL (OpenGL 4.1)</h2>
+      <div class="btns" id="tabs">
+        <button class="p on" type="button" data-t="0">Control (TCS)</button>
+        <button class="p" type="button" data-t="1">Evaluation (TES)</button>
+        <button class="p" type="button" data-t="2">Geometry (GS)</button>
+      </div>
+      <pre id="code"></pre>
+    </section>
+
+    <section>
+      <h2>Measured</h2>
+      <dl class="kv">
+        <dt>Patches in</dt><dd id="sPatch">–</dd>
+        <dt>Triangles from the tessellator</dt><dd id="sTri">–</dd>
+        <dt>Triangles per patch (average)</dt><dd id="sAmp">–</dd>
+        <dt>Extra primitives from the GS</dt><dd id="sGs">–</dd>
+        <dt>Levels across patches</dt><dd id="sLev">–</dd>
+        <dt>JavaScript tessellator</dt><dd id="sMs">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Click through the stages under the scene, 1 to 5: patches in, levels chosen, coordinates generated, vertices placed, triangles post-processed.</li>
+        <li>Pick <b>Manual</b>, set <b>Outer</b> to 1 and drag <b>Inner</b>: the borders stay coarse while the middle fills in. Then the reverse. The small diagram shows the pattern for one patch.</li>
+        <li>With <b>equal_spacing</b>, drag a level slowly: triangles pop in at whole numbers. With a <b>fractional</b> mode, new vertices slide out from the edge ends.</li>
+        <li>On the terrain, switch between <b>per edge</b> and <b>per patch</b> and look along patch borders: per patch leaves slits (pink background showing through) where two neighbors disagree about their shared edge.</li>
+        <li>Orbit with a distance mode on and watch the <b>Tessellation levels</b> stage: detail follows the camera.</li>
+        <li>On the Bézier scene, set both levels to 1: sixteen control points collapse to two flat triangles. Raise them and the curve appears.</li>
+        <li>Pick <b>Grass</b> and change the levels: the blade count follows the triangle count, because the geometry shader runs once per triangle.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let dirty = true, meshDirty = true;
+
+// ---------- text ----------
+const EX_L = [
+  "The control shader writes two kinds of numbers per patch. Outer levels say how many pieces each border is cut into. Inner levels say how finely the middle is cut. They are separate so that a border can match the neighboring patch while the middle does its own thing.",
+  "Each border's level comes only from that border: its length on screen divided by the target edge length. Two patches that share a border compute the same number for it, so their vertices line up and the surface has no holes. Inner levels are the average of the borders.",
+  "Every border of a patch gets the same level, taken from the patch's center. It looks reasonable, but two neighbors at different distances cut their shared border into different numbers of pieces. Once displacement moves the vertices, the mismatch opens into cracks. The background turns pink in this mode so the cracks are easy to see."
+];
+const EX_G = [
+  "The geometry shader receives one complete primitive (here a triangle, all three vertices) and emits the same three vertices. This is the baseline: it adds nothing. The wireframe overlay is a classic use of even this much, because the shader can hand each vertex a different barycentric coordinate for the fragment shader to draw edges from.",
+  "Because it sees the whole triangle, it can compute things no vertex shader can: the face normal and the centroid. Here every triangle moves out along its own face normal and shrinks toward its centroid, so the surface comes apart.",
+  "Input and output types can differ. Triangles go in, line strips come out: one short line per vertex, along its normal. A standard debugging tool.",
+  "Amplification: for each triangle that comes in, the shader emits the triangle and one extra blade standing on its centroid. More tessellation means more triangles, so more grass. Real engines cap this, because geometry shaders are slow when they emit a lot."
+];
+const GS_NAMES = ["pass-through", "explode", "normal lines", "grass blades"];
+const SPACING = ["equal_spacing", "fractional_even_spacing", "fractional_odd_spacing"];
+
+// ---------- state + UI ----------
+const state = { scene: 0, lmode: 1, inner: 8, outer: 8, px: 26, maxL: 32, spacing: 1, disp: 4, round: 1, anim: true, gs: 0, gsAmt: 0.35, shrink: 0.25, wire: true, pedge: true, smooth: true, net: true, strip: true, view: 0, tab: 0 };
+const fmt = { inner: v => v.toFixed(1), outer: v => v.toFixed(1), px: v => v + " px", maxL: v => String(v), disp: v => v.toFixed(1), round: v => v.toFixed(2), gsAmt: v => v.toFixed(2), shrink: v => v.toFixed(2) };
+const MESH_KEYS = new Set(["inner", "outer", "px", "maxL"]);
+for (const k in fmt) { const el = $(k), out = $(k + "V"); const upd = () => { state[k] = +el.value; out.textContent = fmt[k](state[k]); dirty = true; if (MESH_KEYS.has(k)) meshDirty = true; }; el.addEventListener("input", upd); upd(); }
+for (const k of ["anim", "wire", "pedge", "smooth", "net"]) $(k).addEventListener("change", e => { state[k] = e.target.checked; dirty = true; });
+for (const k of ["lmode", "spacing", "gs"]) $(k).addEventListener("change", e => { state[k] = +e.target.value; dirty = true; meshDirty = true; syncUI(); });
+document.querySelectorAll("#scenes button").forEach(b => b.addEventListener("click", () => { state.scene = +b.dataset.s; document.querySelectorAll("#scenes button").forEach(x => x.classList.toggle("on", x === b)); buildScene(); syncUI(); }));
+document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => { state.tab = +b.dataset.t; document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b)); syncUI(); }));
+const STAGES = [[10, "1 Patches in"], [2, "2 Levels (TCS)"], [3, "3 Tess coords"], [1, "4 After TES"], [0, "5 After GS"]];
+const stripEl = $("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+function setView(v) { state.view = v; $("view").value = String(v); thumbs.forEach(t => t.el.classList.toggle("on", t.v === v)); $("lgHeat").style.display = v === 2 ? "" : "none"; dirty = true; }
+$("view").addEventListener("change", e => setView(+e.target.value));
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; rectsDirty = true; dirty = true; });
+
+// the real GLSL shown in the code box
+function glslTCS() {
+  const tri = state.scene === 2, nv = state.scene === 1 ? 16 : tri ? 3 : 4;
+  const head = `#version 410 core\n// Tessellation control shader: runs once per control point of a patch.\nlayout(vertices = ${nv}) out;\n`;
+  const pass = `  gl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;\n`;
+  if (state.lmode === 0) return head + `uniform float inner, outer;\n\nvoid main() {\n${pass}  if (gl_InvocationID == 0) {            // levels belong to the patch: write them once\n` +
+    (tri ? `    gl_TessLevelOuter[0] = gl_TessLevelOuter[1] = gl_TessLevelOuter[2] = outer;\n    gl_TessLevelInner[0] = inner;\n` : `    gl_TessLevelOuter[0] = gl_TessLevelOuter[1] = outer;\n    gl_TessLevelOuter[2] = gl_TessLevelOuter[3] = outer;\n    gl_TessLevelInner[0] = gl_TessLevelInner[1] = inner;\n`) + `  }\n}`;
+  const c = state.scene === 1 ? ["0", "3", "15", "12"] : ["0", "1", "2", "3"], P = i => `gl_in[${c[i]}].gl_Position.xyz`;
+  if (state.lmode === 1) return head + `uniform vec3 eye; uniform float projScale, targetPx, maxLevel;\n\n// One level per EDGE, from that edge alone: both patches that share it get the same answer.\nfloat edgeLevel(vec3 a, vec3 b) {\n  float onScreen = distance(a, b) * projScale / distance(eye, 0.5 * (a + b));   // length in pixels\n  return clamp(onScreen / targetPx, 1.0, maxLevel);\n}\n\nvoid main() {\n${pass}  if (gl_InvocationID == 0) {\n` +
+    (tri ? `    vec3 a = ${P(0)}, b = ${P(1)}, c = ${P(2)};\n    gl_TessLevelOuter[0] = edgeLevel(b, c);   // the edge opposite vertex 0\n    gl_TessLevelOuter[1] = edgeLevel(c, a);\n    gl_TessLevelOuter[2] = edgeLevel(a, b);\n    gl_TessLevelInner[0] = (gl_TessLevelOuter[0] + gl_TessLevelOuter[1] + gl_TessLevelOuter[2]) / 3.0;\n`
+         : `    vec3 p0 = ${P(0)}, p1 = ${P(1)}, p2 = ${P(2)}, p3 = ${P(3)};\n    gl_TessLevelOuter[0] = edgeLevel(p3, p0);   // u = 0\n    gl_TessLevelOuter[1] = edgeLevel(p0, p1);   // v = 0\n    gl_TessLevelOuter[2] = edgeLevel(p1, p2);   // u = 1\n    gl_TessLevelOuter[3] = edgeLevel(p2, p3);   // v = 1\n    gl_TessLevelInner[0] = 0.5 * (gl_TessLevelOuter[1] + gl_TessLevelOuter[3]);   // along u\n    gl_TessLevelInner[1] = 0.5 * (gl_TessLevelOuter[0] + gl_TessLevelOuter[2]);   // along v\n`) + `  }\n}`;
+  return head + `uniform vec3 eye; uniform float projScale, targetPx, maxLevel;\n\nvoid main() {\n${pass}  if (gl_InvocationID == 0) {\n    // One level for the whole patch, from its center. Neighbors disagree: cracks.\n` +
+    (tri ? `    vec3 a = ${P(0)}, b = ${P(1)}, c = ${P(2)}, center = (a + b + c) / 3.0;\n    float size = (distance(a, b) + distance(b, c) + distance(c, a)) / 3.0;\n` : `    vec3 p0 = ${P(0)}, p1 = ${P(1)}, p2 = ${P(2)}, p3 = ${P(3)}, center = 0.25 * (p0 + p1 + p2 + p3);\n    float size = 0.25 * (distance(p0, p1) + distance(p1, p2) + distance(p2, p3) + distance(p3, p0));\n`) +
+    `    float l = clamp(size * projScale / distance(eye, center) / targetPx, 1.0, maxLevel);\n` +
+    (tri ? `    gl_TessLevelOuter[0] = gl_TessLevelOuter[1] = gl_TessLevelOuter[2] = l;\n    gl_TessLevelInner[0] = l;\n` : `    gl_TessLevelOuter[0] = gl_TessLevelOuter[1] = gl_TessLevelOuter[2] = gl_TessLevelOuter[3] = l;\n    gl_TessLevelInner[0] = gl_TessLevelInner[1] = l;\n`) + `  }\n}`;
+}
+function glslTES() {
+  const sp = SPACING[state.spacing], head = `#version 410 core\n// Tessellation evaluation shader: runs once per vertex the tessellator made.\n`;
+  if (state.scene === 0) return head + `layout(quads, ${sp}, ccw) in;\nuniform sampler2D heightMap; uniform float amount;\nout vec3 wpos;\n\nvoid main() {\n  vec2 t = gl_TessCoord.xy;              // where this vertex sits inside the patch, 0..1\n  vec3 p = mix(mix(gl_in[0].gl_Position.xyz, gl_in[1].gl_Position.xyz, t.x),\n               mix(gl_in[3].gl_Position.xyz, gl_in[2].gl_Position.xyz, t.x), t.y);\n  p.y += texture(heightMap, p.xz * 0.02).r * amount;   // displace the new vertex\n  wpos = p;                              // the geometry shader does the projection\n}`;
+  if (state.scene === 1) return head + `layout(quads, ${sp}, ccw) in;\nout vec3 wpos;\n\nvec4 bernstein(float t) { float s = 1.0 - t; return vec4(s*s*s, 3.0*t*s*s, 3.0*t*t*s, t*t*t); }\n\nvoid main() {\n  vec4 bu = bernstein(gl_TessCoord.x), bv = bernstein(gl_TessCoord.y);\n  vec3 p = vec3(0.0);\n  for (int j = 0; j < 4; j++)\n    for (int i = 0; i < 4; i++)\n      p += bu[i] * bv[j] * gl_in[j * 4 + i].gl_Position.xyz;   // blend the 16 control points\n  wpos = p;\n}`;
+  return head + `layout(triangles, ${sp}, ccw) in;\nuniform float radius, roundness, amount;\nout vec3 wpos;\n\nvoid main() {\n  vec3 b = gl_TessCoord;                 // barycentric: b.x + b.y + b.z == 1\n  vec3 p = b.x * gl_in[0].gl_Position.xyz + b.y * gl_in[1].gl_Position.xyz + b.z * gl_in[2].gl_Position.xyz;\n  p = mix(p, normalize(p) * radius, roundness);    // push the flat triangle out onto the sphere\n  p += normalize(p) * noise(normalize(p)) * amount;\n  wpos = p;\n}`;
+}
+function glslGS() {
+  const head = `#version 410 core\n// Geometry shader: runs once per primitive and sees all of its vertices.\nlayout(triangles) in;\n`;
+  if (state.gs === 0) return head + `layout(triangle_strip, max_vertices = 3) out;\nuniform mat4 viewProj;\nin vec3 wpos[];\nout vec3 bary;                           // lets the fragment shader draw a wireframe\n\nvoid main() {\n  for (int i = 0; i < 3; i++) {\n    bary = vec3(i == 0, i == 1, i == 2);\n    gl_Position = viewProj * vec4(wpos[i], 1.0);\n    EmitVertex();\n  }\n  EndPrimitive();\n}`;
+  if (state.gs === 1) return head + `layout(triangle_strip, max_vertices = 3) out;\nuniform mat4 viewProj; uniform float amount, shrink;\nin vec3 wpos[];\n\nvoid main() {\n  vec3 n = normalize(cross(wpos[1] - wpos[0], wpos[2] - wpos[0]));   // face normal\n  vec3 center = (wpos[0] + wpos[1] + wpos[2]) / 3.0;                 // centroid\n  for (int i = 0; i < 3; i++) {\n    vec3 p = mix(wpos[i], center, shrink) + n * amount;\n    gl_Position = viewProj * vec4(p, 1.0);\n    EmitVertex();\n  }\n  EndPrimitive();\n}`;
+  if (state.gs === 2) return head + `layout(line_strip, max_vertices = 6) out;   // triangles in, lines out\nuniform mat4 viewProj; uniform float amount;\nin vec3 wpos[]; in vec3 wnormal[];\n\nvoid main() {\n  for (int i = 0; i < 3; i++) {\n    gl_Position = viewProj * vec4(wpos[i], 1.0);                       EmitVertex();\n    gl_Position = viewProj * vec4(wpos[i] + wnormal[i] * amount, 1.0); EmitVertex();\n    EndPrimitive();                      // one short line per vertex\n  }\n}`;
+  return head + `layout(triangle_strip, max_vertices = 6) out;   // up to two triangles per input triangle\nuniform mat4 viewProj; uniform float amount, time;\nin vec3 wpos[];\n\nvoid main() {\n  for (int i = 0; i < 3; i++) { gl_Position = viewProj * vec4(wpos[i], 1.0); EmitVertex(); }\n  EndPrimitive();                        // 1) the original triangle\n\n  vec3 n = normalize(cross(wpos[1] - wpos[0], wpos[2] - wpos[0]));\n  vec3 center = (wpos[0] + wpos[1] + wpos[2]) / 3.0;\n  vec3 side = normalize(wpos[1] - wpos[0]) * amount * 0.12;\n  vec3 wind = vec3(sin(time * 1.7 + center.x * 0.8), 0.0, cos(time * 1.3 + center.z * 0.7)) * amount * 0.25;\n  gl_Position = viewProj * vec4(center - side, 1.0);               EmitVertex();\n  gl_Position = viewProj * vec4(center + side, 1.0);               EmitVertex();\n  gl_Position = viewProj * vec4(center + n * amount + wind, 1.0);  EmitVertex();\n  EndPrimitive();                        // 2) a new blade of grass\n}`;
+}
+function syncUI() {
+  $("exL").textContent = EX_L[state.lmode]; $("exG").textContent = EX_G[state.gs];
+  const man = state.lmode === 0;
+  $("rInner").classList.toggle("dim", !man); $("rOuter").classList.toggle("dim", !man); $("rPx").classList.toggle("dim", man); $("rMax").classList.toggle("dim", man);
+  $("rRound").classList.toggle("dim", state.scene !== 2); $("rShrink").classList.toggle("dim", state.gs !== 1);
+  $("code").textContent = [glslTCS, glslTES, glslGS][state.tab]();
+  $("hudGs").innerHTML = `GS: <b>${GS_NAMES[state.gs]}</b>`;
+}
+
+// ---------- math ----------
+const nrm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+function mul4(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; }
+function persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; }
+function lookAt(e, c, u) { const z = nrm([e[0] - c[0], e[1] - c[1], e[2] - c[2]]), x = nrm(cross(u, z)), y = cross(z, x); return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1]); }
+
+// ============ the tessellator, emulated: OpenGL's subdivision rules for one patch ============
+// Cut an edge into pieces. Returns the cut positions from 0 to 1.
+function subdiv(level, sp) {
+  let f, n;
+  if (sp === 0) { n = Math.ceil(Math.min(Math.max(level, 1), 64) - 1e-9); }
+  else if (sp === 1) { f = Math.min(Math.max(level, 2), 64); n = Math.ceil(f / 2 - 1e-9) * 2; }
+  else { f = Math.min(Math.max(level, 1), 63); n = Math.ceil((f + 1) / 2 - 1e-9) * 2 - 1; }
+  const a = new Array(n + 1), r = sp === 0 ? 1 : 1 - (n - f) / 2;
+  if (n < 3 || r > 0.9999) { for (let i = 0; i <= n; i++) a[i] = i / n; return a; }
+  // fractional: n - 2 equal pieces plus two shorter ones that grow from zero as the level rises
+  const y = 1 / ((n - 2) + 2 * r), x = r * y; a[0] = 0; a[n] = 1;
+  for (let i = 1; i < n; i++) a[i] = x + (i - 1) * y;
+  return a;
+}
+// Fill the band between an outer row of points and an inner row with triangles.
+function stitch(T, O, tO, I, tI) {
+  let i = 0, j = 0; const nO = O.length - 1, nI = I.length - 1;
+  while (i < nO || j < nI) {
+    if (i < nO && (j === nI || tO[i + 1] <= tI[j + 1])) { T.push(O[i][0], O[i][1], O[i + 1][0], O[i + 1][1], I[j][0], I[j][1]); i++; }
+    else { T.push(O[i][0], O[i][1], I[j + 1][0], I[j + 1][1], I[j][0], I[j][1]); j++; }
+  }
+}
+// Quad domain: (u, v) in the unit square. ol = outer levels for u=0, v=0, u=1, v=1. il = inner levels along u and v.
+function quadPattern(ol, il, sp) {
+  const O = ol.map(l => subdiv(l, sp)); let U = subdiv(il[0], sp), V = subdiv(il[1], sp);
+  if (U.length === 2 && V.length === 2 && O.every(a => a.length === 2)) return new Float32Array([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]);
+  if (U.length === 2) U = subdiv(2, sp); if (V.length === 2) V = subdiv(2, sp);
+  const n = U.length - 1, m = V.length - 1, T = [];
+  for (let j = 1; j < m - 1; j++) for (let i = 1; i < n - 1; i++) T.push(U[i], V[j], U[i + 1], V[j], U[i + 1], V[j + 1], U[i], V[j], U[i + 1], V[j + 1], U[i], V[j + 1]);
+  const iu = [], iv = []; for (let i = 1; i < n; i++) iu.push(i); for (let j = 1; j < m; j++) iv.push(j);
+  stitch(T, O[1].map(s => [s, 0]), O[1], iu.map(i => [U[i], V[1]]), iu.map(i => U[i]));
+  stitch(T, O[2].map(s => [1, s]), O[2], iv.map(j => [U[n - 1], V[j]]), iv.map(j => V[j]));
+  const ru = iu.slice().reverse(), rv = iv.slice().reverse();
+  stitch(T, O[3].map(s => [1 - s, 1]), O[3], ru.map(i => [U[i], V[m - 1]]), ru.map(i => 1 - U[i]));
+  stitch(T, O[0].map(s => [0, 1 - s]), O[0], rv.map(j => [U[1], V[j]]), rv.map(j => 1 - V[j]));
+  return new Float32Array(T);
+}
+// Triangle domain: barycentric (a, b, c). The middle is a stack of smaller and smaller triangles.
+function triPattern(ol, il, sp) {
+  const O = ol.map(l => subdiv(l, sp)); let P = subdiv(il, sp);
+  if (P.length === 2) { if (O.every(a => a.length === 2)) return new Float32Array([1, 0, 0, 1, 0, 0]); P = subdiv(2, sp); }
+  const n = P.length - 1, T = [];
+  const corner = (k, c) => { const d = P[k], r = [2 * d / 3, 2 * d / 3, 2 * d / 3]; r[c] = 1 - 4 * d / 3; return r; };
+  const lerp = (A, B, t) => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t];
+  for (let k = 0; ; k++) {
+    const segs = n - 2 * k;
+    if (segs === 1) { const a = corner(k, 0), b = corner(k, 1), c = corner(k, 2); T.push(a[0], a[1], b[0], b[1], c[0], c[1]); break; }
+    if (segs <= 0) break;
+    const span = P[n - k] - P[k];
+    for (let e = 0; e < 3; e++) {
+      const A = corner(k, e), B = corner(k, (e + 1) % 3), A2 = corner(k + 1, e), B2 = corner(k + 1, (e + 1) % 3);
+      let Op, Ot;
+      if (k === 0) { Ot = O[(e + 2) % 3]; Op = Ot.map(s => lerp(A, B, s)); }
+      else { Ot = []; Op = []; for (let j = k; j <= n - k; j++) { const t = (P[j] - P[k]) / span; Ot.push(t); Op.push(lerp(A, B, t)); } }
+      let Ip = [], It = [];
+      if (segs - 2 <= 0) { Ip = [[A2[0], A2[1]]]; It = [0.5]; }
+      else { const sp2 = P[n - k - 1] - P[k + 1]; for (let j = k + 1; j <= n - k - 1; j++) { Ip.push(lerp(A2, B2, (P[j] - P[k + 1]) / sp2)); It.push((P[j] - P[k]) / span); } }
+      stitch(T, Op, Ot, Ip, It);
+    }
+    if (segs - 2 <= 0) break;
+  }
+  return new Float32Array(T);
+}
+const patCache = new Map();
+const quant = (l, sp) => sp === 0 ? Math.ceil(Math.min(Math.max(l, 1), 64) - 1e-9) : Math.round(Math.min(Math.max(l, 1), 64) * 8) / 8;
+function getPattern(tri, ol, il, sp) {
+  const key = (tri ? "t" : "q") + sp + "|" + ol.join(",") + "|" + il.join(",");
+  let p = patCache.get(key);
+  if (!p) { if (patCache.size > 800) patCache.clear(); p = tri ? triPattern(ol, il[0], sp) : quadPattern(ol, il, sp); patCache.set(key, p); }
+  return p;
+}
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: true, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+// One instance = one triangle from the tessellator. Its three tess coordinates arrive as instance attributes,
+// so this vertex shader can evaluate all three corners: that is what lets it do a geometry shader's job.
+const prog = program(`#version 300 es
+precision highp float; precision highp int;
+layout(location=0) in vec2 aC0; layout(location=1) in vec2 aC1; layout(location=2) in vec2 aC2; layout(location=3) in float aPatch;
+uniform sampler2D uPatches; uniform mat4 uVP;
+uniform int uSurf, uPass, uGs, uSmooth, uFlat; uniform float uDisp, uRound, uTime, uGsAmt, uShrink;
+out vec3 vW; out vec3 vN; out vec3 vBary; out vec3 vTess; out float vAux; flat out float vPatch;
+vec3 cp(int i){ return texelFetch(uPatches, ivec2(i, int(aPatch)), 0).xyz; }
+float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n2(vec2 x){ vec2 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y); }
+float fbm2(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * n2(p); p = p * 2.03 + 17.3; a *= 0.5; } return s; }
+float h3(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float n3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y), mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z); }
+float fbm3(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * n3(p); p = p * 2.03 + 7.1; a *= 0.5; } return s; }
+vec4 bern(float t){ float s = 1.0 - t; return vec4(s * s * s, 3.0 * t * s * s, 3.0 * t * t * s, t * t * t); }
+// ---- the evaluation shader's job: tess coordinate -> position ----
+vec3 tes(vec2 tc){
+  if (uSurf == 0) { vec3 p = mix(mix(cp(0), cp(1), tc.x), mix(cp(3), cp(2), tc.x), tc.y); if (uFlat == 0) p.y += (fbm2(p.xz * 0.11) + 0.12 * n2(p.xz * 1.9)) * uDisp; return p; }
+  if (uSurf == 1) { vec4 bu = bern(tc.x), bv = bern(tc.y); vec3 p = vec3(0.0); for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) p += bu[i] * bv[j] * cp(j * 4 + i); return p; }
+  vec3 p = tc.x * cp(0) + tc.y * cp(1) + (1.0 - tc.x - tc.y) * cp(2);
+  if (uFlat == 0) { p = mix(p, normalize(p) * 2.5, uRound); vec3 d = normalize(p); p += d * (fbm3(d * 2.2) - 0.5) * uDisp * 0.25; }
+  return p;
+}
+vec3 outward(vec3 n, vec3 p){ return uSurf == 2 ? (dot(n, p) < 0.0 ? -n : n) : (n.y < 0.0 ? -n : n); }
+vec3 tesNormal(vec2 tc, vec3 p){ const float e = 0.004; return outward(normalize(cross(tes(tc + vec2(0.0, e)) - p, tes(tc + vec2(e, 0.0)) - p)), p); }
+void main(){
+  int k = gl_VertexID; vec2 c[3] = vec2[3](aC0, aC1, aC2); vec3 p, n = vec3(0.0, 1.0, 0.0); vec2 tc = aC0; vAux = 0.0; vBary = vec3(0.0);
+  if (uPass == 0) {                                   // the triangle itself
+    tc = c[k]; p = tes(tc);
+    bool whole = uSmooth == 0 || uGs == 1; vec3 fn = n, cen = p;
+    if (whole) { vec3 p0 = tes(aC0), p1 = tes(aC1), p2 = tes(aC2); fn = outward(normalize(cross(p1 - p0, p2 - p0)), p0); cen = (p0 + p1 + p2) / 3.0; }
+    n = uSmooth == 1 ? tesNormal(tc, p) : fn;
+    if (uGs == 1) p = mix(p, cen, uShrink) + fn * uGsAmt;      // geometry shader: explode
+    vBary = vec3(k == 0, k == 1, k == 2);
+  } else if (uPass == 1) {                            // geometry shader: a line along each vertex normal
+    tc = c[k >> 1]; p = tes(tc); n = tesNormal(tc, p); vAux = float(k & 1); p += n * uGsAmt * vAux;
+  } else {                                            // geometry shader: one extra blade per triangle
+    vec3 p0 = tes(aC0), p1 = tes(aC1), p2 = tes(aC2), cen = (p0 + p1 + p2) / 3.0;
+    n = outward(normalize(cross(p1 - p0, p2 - p0)), p0);
+    vec3 side = normalize(p1 - p0) * uGsAmt * 0.12, wind = vec3(sin(uTime * 1.7 + cen.x * 0.8), 0.0, cos(uTime * 1.3 + cen.z * 0.7)) * uGsAmt * 0.25;
+    p = k == 0 ? cen - side : (k == 1 ? cen + side : cen + n * uGsAmt + wind); vAux = float(k == 2);
+  }
+  vW = p; vN = n; vPatch = aPatch; vTess = uSurf == 2 ? vec3(tc, 1.0 - tc.x - tc.y) : vec3(tc, 0.0);
+  gl_Position = uVP * vec4(p, 1.0);
+}`, `#version 300 es
+precision highp float; precision highp int;
+in vec3 vW; in vec3 vN; in vec3 vBary; in vec3 vTess; in float vAux; flat in float vPatch;
+uniform sampler2D uPatches; uniform vec3 uEye;
+uniform int uSurf, uPass, uColor, uWire, uPedge; uniform float uDisp;
+out vec4 o;
+vec3 heat(float l){ float t = clamp(log2(max(l, 1.0)) / 6.0, 0.0, 1.0) * 4.0; vec3 c[5] = vec3[5](vec3(0.10,0.20,0.80), vec3(0.10,0.80,0.70), vec3(0.95,0.85,0.20), vec3(1.0,0.20,0.10), vec3(1.0)); int i = int(min(floor(t), 3.0)); return mix(c[i], c[i + 1], t - float(i)); }
+vec3 hue(float x){ return 0.35 + 0.65 * fract(x * vec3(0.713, 0.371, 0.529) + vec3(0.1, 0.4, 0.7)); }
+void main(){
+  if (uPass == 1) { o = vec4(mix(vec3(1.0, 0.75, 0.2), vec3(1.0), vAux), 1.0); return; }
+  vec3 N = normalize(vN), V = normalize(uEye - vW), L = normalize(vec3(0.45, 0.8, 0.35)); if (dot(N, V) < 0.0) N = -N;
+  float lit = 0.28 + 0.72 * max(dot(N, L), 0.0);
+  if (uPass == 2) { o = vec4(pow(mix(vec3(0.05, 0.22, 0.04), vec3(0.45, 0.75, 0.22), vAux) * (0.6 + 0.4 * lit), vec3(1.0 / 2.2)), 1.0); return; }
+  float border = uSurf == 2 ? min(vTess.x, min(vTess.y, vTess.z)) : min(min(vTess.x, 1.0 - vTess.x), min(vTess.y, 1.0 - vTess.y));
+  vec3 col;
+  if (uColor == 0) {
+    if (uSurf == 0) { vec3 g = mix(vec3(0.33, 0.30, 0.27), vec3(0.17, 0.36, 0.14), smoothstep(0.65, 0.9, N.y)); col = mix(g, vec3(0.85, 0.87, 0.9), smoothstep(0.62, 0.75, vW.y / max(uDisp, 0.01))); }
+    else if (uSurf == 1) col = vec3(0.20, 0.52, 0.56);
+    else col = vec3(0.62, 0.48, 0.33);
+    col *= lit;
+  } else if (uColor == 1) col = hue(vPatch + 1.0) * (0.45 + 0.55 * lit);
+  else if (uColor == 2) {
+    vec4 il = texelFetch(uPatches, ivec2(16, int(vPatch)), 0), ol = texelFetch(uPatches, ivec2(17, int(vPatch)), 0);
+    float l = uSurf == 2 ? il.x : 0.5 * (il.x + il.y);
+    if (border < 0.07) { if (uSurf == 2) l = vTess.x < 0.07 ? ol.x : (vTess.y < 0.07 ? ol.y : ol.z); else l = vTess.x < 0.07 ? ol.x : (vTess.y < 0.07 ? ol.y : (vTess.x > 0.93 ? ol.z : ol.w)); }
+    col = heat(l) * (0.55 + 0.45 * lit);
+  } else col = (uSurf == 2 ? vTess : vec3(vTess.xy, 0.15)) * (0.6 + 0.4 * lit);
+  col = pow(col, vec3(1.0 / 2.2));
+  if (uPedge == 1) { float w = fwidth(border); col = mix(col, vec3(1.0), (1.0 - smoothstep(w * 1.0, w * 2.2, border)) * 0.9); }
+  if (uWire == 1) { float e = min(vBary.x, min(vBary.y, vBary.z)), w = fwidth(e); col = mix(col, vec3(0.03, 0.04, 0.05), (1.0 - smoothstep(w * 0.4, w * 1.1, e)) * 0.6); }
+  o = vec4(col, 1.0);
+}`);
+const lineProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; uniform mat4 uVP; void main(){ gl_Position = uVP * vec4(aPos, 1.0); gl_PointSize = 7.0; }`, `#version 300 es
+precision mediump float; uniform vec4 uCol; out vec4 o; void main(){ o = uCol; }`);
+
+// ---------- buffers ----------
+function meshSet() {
+  const vao = gl.createVertexArray(), uv = gl.createBuffer(), id = gl.createBuffer();
+  gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, uv);
+  for (let a = 0; a < 3; a++) { gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 24, a * 8); gl.vertexAttribDivisor(a, 1); }
+  gl.bindBuffer(gl.ARRAY_BUFFER, id); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(3, 1);
+  gl.bindVertexArray(null);
+  return { vao, uv, id, count: 0, uvArr: new Float32Array(6 * 4096), idArr: new Float32Array(4096) };
+}
+function meshFill(M, list) {      // list of [pattern, patchIndex]
+  let total = 0; for (const [p] of list) total += p.length / 6;
+  if (total > M.idArr.length) { let c = M.idArr.length; while (c < total) c *= 2; M.uvArr = new Float32Array(c * 6); M.idArr = new Float32Array(c); }
+  let o = 0; for (const [p, i] of list) { const t = p.length / 6; M.uvArr.set(p, o * 6); M.idArr.fill(i, o, o + t); o += t; }
+  gl.bindBuffer(gl.ARRAY_BUFFER, M.uv); gl.bufferData(gl.ARRAY_BUFFER, M.uvArr.subarray(0, total * 6), gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, M.id); gl.bufferData(gl.ARRAY_BUFFER, M.idArr.subarray(0, total), gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null); M.count = total;
+}
+const mesh = meshSet(), cage = meshSet();
+const netVao = gl.createVertexArray(), netBuf = gl.createBuffer(); let netLines = 0, netPts = 0;
+gl.bindVertexArray(netVao); gl.bindBuffer(gl.ARRAY_BUFFER, netBuf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
+const patchTex = gl.createTexture(); const PW = 18;
+gl.bindTexture(gl.TEXTURE_2D, patchTex); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+// ---------- scenes ----------
+let patches = [], patchData = null, isTri = false, ctrl = null;
+const cam = { yaw: 1.0, pitch: 0.5, dist: 30, tgt: [0, 1.5, 0] };
+const SCENE_AMT = [1.3, 0.7, 0.55];
+function bezierY(i, j, t) { return Math.sin(i * 1.1 + t * 0.8) * Math.cos(j * 0.9 + t * 0.6) * 1.3; }
+function updateBezier(t) {
+  for (let j = 0; j < 7; j++) for (let i = 0; i < 7; i++) ctrl[j][i] = [(i - 3) * 1.25, bezierY(i, j, t), (j - 3) * 1.25];
+  for (let j = 0; j < 7; j++) ctrl[j][3][1] = 0.5 * (ctrl[j][2][1] + ctrl[j][4][1]);   // keep neighboring patches smooth across the seam
+  for (let i = 0; i < 7; i++) ctrl[3][i][1] = 0.5 * (ctrl[2][i][1] + ctrl[4][i][1]);
+  const L = [];
+  patches.forEach((p, pi) => {
+    const pj = pi >> 1, pii = pi & 1;
+    for (let jj = 0; jj < 4; jj++) for (let ii = 0; ii < 4; ii++) p.cps[jj * 4 + ii] = ctrl[pj * 3 + jj][pii * 3 + ii];
+    p.corners = [p.cps[0], p.cps[3], p.cps[15], p.cps[12]];
+    for (let a = 0; a < 4; a++) for (let b = 0; b < 3; b++) { L.push(...p.cps[a * 4 + b], ...p.cps[a * 4 + b + 1], ...p.cps[b * 4 + a], ...p.cps[(b + 1) * 4 + a]); }
+  });
+  netLines = L.length / 3;
+  for (let j = 0; j < 7; j++) for (let i = 0; i < 7; i++) L.push(...ctrl[j][i]);
+  netPts = 49;
+  gl.bindBuffer(gl.ARRAY_BUFFER, netBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(L), gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, null);
+}
+function buildScene() {
+  patches = []; isTri = state.scene === 2;
+  if (state.scene === 0) {
+    const G = 10, S = 4;
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const x = (i - G / 2) * S, z = (j - G / 2) * S, c = [[x, 0, z], [x + S, 0, z], [x + S, 0, z + S], [x, 0, z + S]]; patches.push({ cps: c, corners: c }); }
+    Object.assign(cam, { yaw: 1.0, pitch: 0.45, dist: 32, tgt: [0, 1.5, 0] });
+  } else if (state.scene === 1) {
+    ctrl = []; for (let j = 0; j < 7; j++) ctrl.push(new Array(7));
+    for (let i = 0; i < 4; i++) patches.push({ cps: new Array(16), corners: null });
+    updateBezier(0);
+    Object.assign(cam, { yaw: 0.9, pitch: 0.5, dist: 13, tgt: [0, 0, 0] });
+  } else {
+    const t = (1 + Math.sqrt(5)) / 2, V = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(v => nrm(v).map(x => x * 2.5));
+    const F = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+    for (const f of F) { const c = [V[f[0]], V[f[1]], V[f[2]]]; patches.push({ cps: c, corners: c }); }
+    Object.assign(cam, { yaw: 1.0, pitch: 0.3, dist: 9.5, tgt: [0, 0, 0] });
+  }
+  patchData = new Float32Array(PW * 4 * patches.length);
+  gl.bindTexture(gl.TEXTURE_2D, patchTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, PW, patches.length, 0, gl.RGBA, gl.FLOAT, patchData);
+  const one = isTri ? getPattern(true, [1, 1, 1], [1], 0) : getPattern(false, [1, 1, 1, 1], [1, 1], 0);
+  meshFill(cage, patches.map((_, i) => [one, i]));
+  $("sPatch").textContent = `${patches.length} (${isTri ? "3" : state.scene === 1 ? "16" : "4"} control points each)`;
+  $("hudIn").innerHTML = `<b>${patches.length}</b> patches in`;
+  meshDirty = true; dirty = true;
+}
+
+// ---------- the control shader, emulated: choose levels per patch, then run the tessellator ----------
+let probe = null, tessMs = 0;
+function retessellate(eye, projScale) {
+  const t0 = performance.now(), sp = state.spacing, list = [], q = l => quant(l, sp);
+  const edge = (a, b) => Math.min(Math.max(dist(a, b) * projScale / Math.max(dist(eye, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]), 1e-3) / state.px, 1), state.maxL);
+  let lo = 1e9, hi = 0, best = 1e9; probe = null;
+  patches.forEach((p, pi) => {
+    const c = p.corners; let ol, il;
+    if (state.lmode === 0) { ol = isTri ? [state.outer, state.outer, state.outer] : [state.outer, state.outer, state.outer, state.outer]; il = isTri ? [state.inner] : [state.inner, state.inner]; }
+    else if (state.lmode === 1) {
+      if (isTri) { ol = [edge(c[1], c[2]), edge(c[2], c[0]), edge(c[0], c[1])]; il = [(ol[0] + ol[1] + ol[2]) / 3]; }
+      else { ol = [edge(c[3], c[0]), edge(c[0], c[1]), edge(c[1], c[2]), edge(c[2], c[3])]; il = [0.5 * (ol[1] + ol[3]), 0.5 * (ol[0] + ol[2])]; }
+    } else {
+      const n = c.length, cen = [0, 0, 0]; let size = 0;
+      for (let k = 0; k < n; k++) { cen[0] += c[k][0] / n; cen[1] += c[k][1] / n; cen[2] += c[k][2] / n; size += dist(c[k], c[(k + 1) % n]) / n; }
+      const l = Math.min(Math.max(size * projScale / Math.max(dist(eye, cen), 1e-3) / state.px, 1), state.maxL);
+      ol = isTri ? [l, l, l] : [l, l, l, l]; il = isTri ? [l] : [l, l];
+    }
+    ol = ol.map(q); il = il.map(q);
+    list.push([getPattern(isTri, ol, il, sp), pi]);
+    const o = pi * PW * 4; p.cps.forEach((v, k) => { patchData[o + k * 4] = v[0]; patchData[o + k * 4 + 1] = v[1]; patchData[o + k * 4 + 2] = v[2]; });
+    patchData[o + 64] = il[0]; patchData[o + 65] = il[1] || il[0]; for (let k = 0; k < ol.length; k++) patchData[o + 68 + k] = ol[k];
+    for (const l of ol.concat(il)) { lo = Math.min(lo, l); hi = Math.max(hi, l); }
+    const cx = c.reduce((s, v) => s + v[0], 0) / c.length, cy = c.reduce((s, v) => s + v[1], 0) / c.length, cz = c.reduce((s, v) => s + v[2], 0) / c.length, d = dist(eye, [cx, cy, cz]);
+    if (d < best) { best = d; probe = { ol, il }; }
+  });
+  meshFill(mesh, list);
+  gl.bindTexture(gl.TEXTURE_2D, patchTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, PW, patches.length, gl.RGBA, gl.FLOAT, patchData);
+  tessMs = performance.now() - t0;
+  $("sTri").textContent = mesh.count.toLocaleString("en-US"); $("sAmp").textContent = (mesh.count / patches.length).toFixed(1);
+  $("sLev").textContent = lo === hi ? lo.toFixed(1) : `${lo.toFixed(1)} to ${hi.toFixed(1)}`;
+  $("sMs").textContent = tessMs.toFixed(1) + " ms"; $("hudOut").innerHTML = `<b>${mesh.count.toLocaleString("en-US")}</b> triangles out`;
+  drawDomain();
+}
+// the panel diagram: the tessellator's output for the patch nearest the camera, in the patch's own coordinates
+function drawDomain() {
+  const cv = $("dom"), dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; if (!w || !probe) return;
+  cv.width = w * dpr; cv.height = h * dpr; const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const P = getPattern(isTri, probe.ol, probe.il, state.spacing), s = Math.min(w, h) - 24, x0 = (w - s) / 2, y0 = 12;
+  const map = isTri ? (a, b) => { const c = 1 - a - b; return [x0 + (a * 0.5 + b * 0 + c * 1) * s, y0 + (a * 0.04 + b * 0.9 + c * 0.9) * s]; } : (u, v) => [x0 + u * s, y0 + (1 - v) * s];
+  g.lineWidth = 1; g.strokeStyle = "rgba(127,214,164,.8)"; g.fillStyle = "rgba(127,214,164,.08)"; g.beginPath();
+  for (let i = 0; i < P.length; i += 6) { const a = map(P[i], P[i + 1]), b = map(P[i + 2], P[i + 3]), c = map(P[i + 4], P[i + 5]); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.closePath(); }
+  g.fill(); g.stroke();
+  const f = v => v.toFixed(state.spacing === 0 ? 0 : 1);
+  $("domCap").textContent = `The patch nearest the camera: outer [${probe.ol.map(f).join(", ")}], inner [${probe.il.map(f).join(", ")}], ${P.length / 6} triangles. The outer band is stitched between the border's cuts and the inner grid's cuts.`;
+}
+
+// ---------- layout + camera ----------
+let W = 0, H = 0, rectsDirty = true;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (w !== W || h !== H) { W = w; H = h; canvas.width = w; canvas.height = h; stripEl.style.setProperty("--ar", (w / h).toFixed(3)); rectsDirty = true; dirty = true; meshDirty = true; }
+  if (rectsDirty) {
+    rectsDirty = false;
+    const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+    for (const t of thumbs) { const r = t.el.getBoundingClientRect(); t.rect = [Math.round((r.left - cr.left + 1) * sx), Math.round((cr.bottom - r.bottom + 1) * sy), Math.round((r.width - 2) * sx), Math.round((r.height - 2) * sy)]; }
+  }
+}
+window.addEventListener("resize", () => { rectsDirty = true; dirty = true; drawDomain(); });
+let drag = null; const pointers = new Map();
+const camMoved = () => { dirty = true; if (state.lmode !== 0) meshDirty = true; };
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); if (!pointers.size) drag = null; });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return; camMoved();
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [c, d] = [...pointers.values()]; const d1 = Math.hypot(c[0] - d[0], c[1] - d[1]);
+    if (d0 > 0 && d1 > 0) cam.dist = Math.min(90, Math.max(2, cam.dist * d0 / d1));
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) { const s = cam.dist * 0.0014, cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw); cam.tgt[0] += sy * dx * s; cam.tgt[2] -= cy * dx * s; cam.tgt[1] += dy * s; }
+  else { cam.yaw += dx * 0.006; cam.pitch = Math.max(-1.3, Math.min(1.5, cam.pitch + dy * 0.006)); }
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(90, Math.max(2, cam.dist * Math.exp(e.deltaY * 0.001))); camMoved(); }, { passive: false });
+
+// ---------- frame ----------
+const FOV = 0.8;
+function drawView(view, x, y, w, h, c, small) {
+  gl.viewport(x, y, w, h); gl.scissor(x, y, w, h); if (state.lmode === 2 && view !== 10) gl.clearColor(0.9, 0.1, 0.5, 1); else gl.clearColor(0.05, 0.06, 0.08, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const vp = mul4(persp(FOV, w / h, 0.1, 300), c.view), isCage = view === 10, fin = view === 0, M = isCage ? cage : mesh, gsMode = fin ? state.gs : 0, amt = state.gsAmt * SCENE_AMT[state.scene];
+  gl.useProgram(prog.p); const u = prog.u;
+  gl.uniformMatrix4fv(u.uVP, false, vp); gl.uniform3fv(u.uEye, c.eye); gl.uniform1i(u.uPatches, 0);
+  gl.uniform1i(u.uSurf, state.scene); gl.uniform1i(u.uFlat, isCage ? 1 : 0); gl.uniform1i(u.uSmooth, isCage ? 0 : (state.smooth ? 1 : 0));
+  gl.uniform1f(u.uDisp, state.disp); gl.uniform1f(u.uRound, state.round); gl.uniform1f(u.uTime, c.time); gl.uniform1f(u.uGsAmt, amt); gl.uniform1f(u.uShrink, state.shrink);
+  gl.uniform1i(u.uColor, isCage ? 1 : view); gl.uniform1i(u.uWire, small || isCage || view === 3 ? 0 : (fin ? (state.wire ? 1 : 0) : 1)); gl.uniform1i(u.uPedge, small ? (isCage ? 1 : 0) : (fin ? (state.pedge ? 1 : 0) : 1));
+  gl.bindVertexArray(M.vao);
+  gl.uniform1i(u.uPass, 0); gl.uniform1i(u.uGs, gsMode === 1 ? 1 : 0); gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, M.count);
+  if (gsMode === 2) { gl.uniform1i(u.uPass, 1); gl.drawArraysInstanced(gl.LINES, 0, 6, M.count); }
+  if (gsMode === 3) { gl.uniform1i(u.uPass, 2); gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, M.count); }
+  if (state.scene === 1 && state.net && (fin || isCage || view === 1)) {
+    gl.useProgram(lineProg.p); gl.uniformMatrix4fv(lineProg.u.uVP, false, vp); gl.bindVertexArray(netVao);
+    gl.uniform4f(lineProg.u.uCol, 1, 0.78, 0.3, 1); gl.drawArrays(gl.LINES, 0, netLines);
+    gl.uniform4f(lineProg.u.uCol, 1, 1, 1, 1); gl.drawArrays(gl.POINTS, netLines, netPts);
+  }
+}
+let last = performance.now(), time = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const animating = state.anim && (state.scene === 1 || state.gs === 3);
+  if (animating) { time += dt; dirty = true; }
+  resize();
+  if (!dirty) return; dirty = false;
+  const eye = [cam.tgt[0] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), cam.tgt[1] + cam.dist * Math.sin(cam.pitch), cam.tgt[2] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw)];
+  gl.activeTexture(gl.TEXTURE0);
+  if (state.scene === 1 && state.anim) {
+    updateBezier(time);
+    if (!meshDirty) { patches.forEach((p, pi) => { const o = pi * PW * 4; p.cps.forEach((v, k) => { patchData[o + k * 4 + 1] = v[1]; }); }); gl.bindTexture(gl.TEXTURE_2D, patchTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, PW, patches.length, gl.RGBA, gl.FLOAT, patchData); }
+  }
+  if (meshDirty) { meshDirty = false; retessellate(eye, canvas.clientHeight / (2 * Math.tan(FOV / 2))); }
+  const extra = state.gs === 2 ? `${(mesh.count * 3).toLocaleString("en-US")} lines` : state.gs === 3 ? `${mesh.count.toLocaleString("en-US")} blades` : "none";
+  $("sGs").textContent = extra;
+  gl.bindTexture(gl.TEXTURE_2D, patchTex);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.enable(gl.SCISSOR_TEST);
+  const c = { view: lookAt(eye, cam.tgt, [0, 1, 0]), eye, time };
+  drawView(state.view, 0, 0, W, H, c);
+  if (state.strip) for (const t of thumbs) { const [x, y, w, h] = t.rect || [0, 0, 0, 0]; if (w > 4 && h > 4) drawView(t.v, x, y, w, h, c, true); }
+  gl.disable(gl.SCISSOR_TEST);
+}
+try { buildScene(); syncUI(); setView(0); resize(); requestAnimationFrame(frame); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

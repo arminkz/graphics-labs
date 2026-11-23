@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSAO Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport with a pipeline strip, instrument panel on the right; stacks on narrow screens. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #b59cff;
+  --warn: #ff7a66;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 350px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas#c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas#c:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.82); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: #e6e9ef; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 130px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 10px; }
+#kernel { display: block; width: 100%; height: 150px; margin-top: 10px; background: #0f1217; border: 1px solid var(--line); border-radius: 6px; }
+.kcap { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.row { display: grid; grid-template-columns: 104px 1fr 62px; align-items: center; gap: 8px; margin: 6px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL SSAO scene"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudTech">technique</span>
+      <span class="chip" id="hudTaps">taps</span>
+      <span class="chip" id="hudTime">GPU</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll or pinch to zoom · right-drag to pan</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Screen-space ambient occlusion lab</h1>
+      <p class="sub">Deferred pipeline in WebGL 2: G-buffer (view-space position + normal) → AO pass → blur → ambient × AO. Corners, creases and contact points get darker because less of the sky can reach them.</p>
+    </div>
+
+    <section>
+      <h2>Technique</h2>
+      <select id="tech" aria-label="AO technique">
+        <option value="0">1. Crytek (2007): sphere, depth only</option>
+        <option value="1" selected>2. Normal-oriented hemisphere</option>
+        <option value="2">3. SAO / Alchemy: screen-space disk</option>
+        <option value="3">4. HBAO: horizon search</option>
+      </select>
+      <div class="explain" id="explain"></div>
+      <canvas id="kernel" aria-label="Sample pattern for the current technique"></canvas>
+      <div class="kcap" id="kcap"></div>
+    </section>
+
+    <section>
+      <h2>Sampling</h2>
+      <div class="row"><label for="samples">Samples</label><input id="samples" type="range" min="4" max="64" step="1" value="16"><output id="samplesV">16</output></div>
+      <div class="row"><label for="radius">Radius</label><input id="radius" type="range" min="0.1" max="3" step="0.05" value="1"><output id="radiusV">1.00 m</output></div>
+      <div class="row"><label for="bias">Bias</label><input id="bias" type="range" min="0" max="0.1" step="0.001" value="0.025"><output id="biasV">2.5 cm</output></div>
+      <div class="row"><label for="power">Contrast</label><input id="power" type="range" min="0.5" max="4" step="0.05" value="2"><output id="powerV">2.00</output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="noise" checked> Random rotation per pixel (4×4 noise tile)</label>
+        <label><input type="checkbox" id="range" checked> Range check (stops dark halos; techniques 1–2)</label>
+        <label><input type="checkbox" id="half" checked> Compute AO at half resolution (¼ of the pixels)</label>
+      </div>
+      <div class="row" style="margin-top:8px"><label for="blur">Blur</label>
+        <select id="blur"><option value="0">None (raw)</option><option value="1" selected>4×4 box (matches the noise tile)</option><option value="2">Bilateral 9+9 taps (depth-aware)</option></select>
+      </div>
+    </section>
+
+    <section>
+      <h2>Scene and lighting</h2>
+      <div class="row"><label for="hover">Cube height</label><input id="hover" type="range" min="0" max="2" step="0.01" value="0.25"><output id="hoverV">0.25 m</output></div>
+      <div class="row"><label for="split">Split compare</label><input id="split" type="range" min="0" max="100" step="1" value="0"><output id="splitV">off</output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="sun" checked> Weak sun (unshadowed) on top of sky light</label>
+        <label><input type="checkbox" id="stripOn" checked> Show pipeline stages under the scene</label>
+      </div>
+      <div class="btns"><button class="p" type="button" id="reset">Reset camera</button></div>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <select id="view" aria-label="Main view">
+        <option value="0">Final: ambient × AO + sun</option>
+        <option value="6">Without AO</option>
+        <option value="5">AO after blur</option>
+        <option value="4">AO raw (before blur)</option>
+        <option value="3">Rotation noise (enlarged)</option>
+        <option value="2">G-buffer: view-space normals</option>
+        <option value="1">G-buffer: depth</option>
+      </select>
+    </section>
+
+    <section>
+      <h2>Measured</h2>
+      <dl class="kv">
+        <dt>AO buffer</dt><dd id="sRes">–</dd>
+        <dt>Depth reads per pixel</dt><dd id="sTpp">–</dd>
+        <dt>Depth reads per frame</dt><dd id="sTaps">–</dd>
+        <dt>GPU, G-buffer</dt><dd id="gG">–</dd>
+        <dt>GPU, AO pass</dt><dd id="gA">–</dd>
+        <dt>GPU, blur</dt><dd id="gB">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Pick <b>Crytek</b>: the flat floor and walls turn gray, because half of every sphere is under the surface. Switch to <b>hemisphere</b> and they turn white again.</li>
+        <li>Turn off <b>Random rotation</b>: smooth but banded rings. Turn it on with Blur <b>None</b>: grainy 4×4 pattern. Then pick <b>4×4 box</b>: the pattern averages away.</li>
+        <li>Turn off <b>Range check</b> and look where the table and blocks overlap the far wall: dark halos around their outlines.</li>
+        <li>Drag <b>Cube height</b> to 0 and back up: the contact shadow under the cube grows and fades.</li>
+        <li>Set Radius to <b>2.5 m</b>: AO turns into big dirty blobs. At <b>0.2 m</b> only tight creases darken.</li>
+        <li>Move <b>Split compare</b> to 50%: left half without AO, right half with it.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+// ---------- UI ----------
+const TECHS = [
+  "For each pixel, scatter samples in a sphere around its 3D position, project each to the screen, and check the depth buffer: if the stored surface is in front of the sample, the sample is buried, so count it as occluded. No normals needed, but half of every sphere is under any flat surface, so flat areas read about 50% gray.",
+  "Same depth test, but the samples sit in a hemisphere oriented along the surface normal (built with a TBN matrix from the normal and a random vector). Flat surfaces are now unoccluded; only geometry rising above the tangent plane darkens. Samples cluster toward the center so nearby occluders count more.",
+  "Samples on a spiral disk in screen space, scaled to the radius at this pixel's depth. For each sample, read its 3D position v and add max(0, v·n − bias) / |v|², with a smooth falloff to zero at the radius. Closer and more upward neighbors occlude more. Smooth and cheap.",
+  "Horizon-based AO: march a few rays across the screen from the pixel. Along each ray, track the highest elevation angle any neighbor reaches above the tangent plane (the horizon). Occlusion = how much of the sky those horizons block, weighted by distance falloff."
+];
+const VIEWS = { 0: "Final", 1: "Depth", 2: "Normals", 3: "Noise", 4: "AO raw", 5: "AO blurred", 6: "No AO" };
+const state = { tech: 1, samples: 16, radius: 1.0, bias: 0.025, power: 2.0, noise: true, range: true, half: true, blur: 1, hover: 0.25, split: 0, sun: true, view: 0, strip: true };
+const fmt = {
+  samples: v => String(v), radius: v => v.toFixed(2) + " m", bias: v => (v * 100).toFixed(1) + " cm", power: v => v.toFixed(2),
+  hover: v => v.toFixed(2) + " m", split: v => v === 0 ? "off" : v + "%"
+};
+for (const k of Object.keys(fmt)) {
+  const el = $(k), out = $(k + "V");
+  const upd = () => { state[k] = +el.value; out.textContent = fmt[k](state[k]); if (k === "samples") { makeKernel(); drawKernel(); } if (k === "hover") updateHover(); };
+  el.addEventListener("input", upd);
+}
+for (const k of ["noise", "range", "half", "sun"]) $(k).addEventListener("change", e => { state[k] = e.target.checked; if (k === "noise") drawKernel(); });
+$("blur").addEventListener("change", e => state.blur = +e.target.value);
+$("tech").addEventListener("change", e => { state.tech = +e.target.value; syncTech(); });
+function syncTech() {
+  $("explain").textContent = TECHS[state.tech];
+  $("hudTech").innerHTML = `technique <b>${state.tech + 1}</b> · ${$("tech").options[state.tech].text.replace(/^\d+\.\s*/, "")}`;
+  makeKernel(); drawKernel();
+}
+
+const STAGES = [[1, "1 Depth"], [2, "2 Normals"], [3, "3 Noise"], [4, "4 AO raw"], [5, "5 AO blurred"], [6, "6 Without AO"], [0, "7 Final"]];
+const stripEl = $("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+function setView(v) { state.view = v; $("view").value = String(v); thumbs.forEach(t => t.el.classList.toggle("on", t.v === v)); }
+$("view").addEventListener("change", e => setView(+e.target.value));
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; rectsDirty = true; });
+
+// ---------- kernel ----------
+function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+const kernel = new Float32Array(64 * 3);
+let kernelDirty = true;
+function makeKernel() {
+  kernelDirty = true;
+  const r = rng(1234), n = state.samples, sphere = state.tech === 0;
+  for (let i = 0; i < 64; i++) {
+    let x, y, z, l;
+    do { x = r() * 2 - 1; y = r() * 2 - 1; z = sphere ? r() * 2 - 1 : r(); l = Math.hypot(x, y, z); } while (l > 1 || l < 0.05);
+    x /= l; y /= l; z /= l;
+    let s = (i + 0.5) / n; s = 0.1 + 0.9 * s * s; s *= 0.35 + 0.65 * r();
+    kernel.set([x * s, y * s, z * s], i * 3);
+  }
+}
+
+// 2D canvas: what the sample pattern looks like
+function drawKernel() {
+  const cv = $("kernel"), dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const acc = "#b59cff", mut = "#8a93a3", bad = "#ff7a66", n = state.samples;
+  g.font = "11px IBM Plex Mono, monospace"; g.lineWidth = 1;
+  if (state.tech <= 1) {
+    const cx = w / 2, cy = state.tech === 0 ? h / 2 : h - 22, R = state.tech === 0 ? h / 2 - 12 : h - 34;
+    g.fillStyle = "#1c2230"; g.fillRect(0, cy, w, h - cy);
+    g.strokeStyle = mut; g.beginPath(); g.moveTo(0, cy); g.lineTo(w, cy); g.stroke();
+    g.setLineDash([3, 3]); g.beginPath(); g.arc(cx, cy, R, state.tech === 0 ? 0 : Math.PI, Math.PI * 2); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = acc; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, cy - 26); g.stroke();
+    g.fillStyle = acc; g.fillText("n", cx + 4, cy - 20);
+    let under = 0;
+    for (let i = 0; i < n; i++) {
+      const x = kernel[i * 3], z = kernel[i * 3 + 2];
+      const px = cx + x * R, py = cy - z * R; const below = z < 0; if (below) under++;
+      g.fillStyle = below ? bad : acc; g.beginPath(); g.arc(px, py, 2.6, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = "#c9cfdb"; g.fillText(state.tech === 0 ? "side view: sphere around the pixel" : "side view: hemisphere along the normal", 8, 14);
+    $("kcap").textContent = state.tech === 0
+      ? `${under} of ${n} samples are below this flat surface (red). They always count as occluded, so a flat floor is about ${Math.round(under / n * 100)}% dark.`
+      : `All ${n} samples are above the surface. Density increases toward the center, so close occluders weigh more.`;
+  } else if (state.tech === 2) {
+    const cx = w / 2, cy = h / 2, R = h / 2 - 10;
+    g.strokeStyle = mut; g.setLineDash([3, 3]); g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = "rgba(181,156,255,.35)"; g.beginPath();
+    for (let i = 0; i < n; i++) { const a = (i + 0.5) / n, th = a * 7 * 2 * Math.PI; const px = cx + Math.cos(th) * a * R, py = cy + Math.sin(th) * a * R; i ? g.lineTo(px, py) : g.moveTo(px, py); }
+    g.stroke();
+    g.fillStyle = acc;
+    for (let i = 0; i < n; i++) { const a = (i + 0.5) / n, th = a * 7 * 2 * Math.PI; g.beginPath(); g.arc(cx + Math.cos(th) * a * R, cy + Math.sin(th) * a * R, 2.6, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = "#c9cfdb"; g.fillText("screen view: spiral of 2D offsets", 8, 14);
+    $("kcap").textContent = `${n} taps on a 7-turn spiral. The disk is the AO radius projected to pixels, so it shrinks with distance.`;
+  } else {
+    const cx = w / 2, cy = h / 2, R = h / 2 - 10, dirs = n >= 16 ? 8 : 4, steps = Math.max(1, Math.floor(n / dirs));
+    g.strokeStyle = mut; g.setLineDash([3, 3]); g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+    for (let d = 0; d < dirs; d++) {
+      const th = 2 * Math.PI * d / dirs + 0.3;
+      g.strokeStyle = "rgba(181,156,255,.5)"; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(th) * R, cy + Math.sin(th) * R); g.stroke();
+      g.fillStyle = acc;
+      for (let s = 1; s <= steps; s++) { const t = s / steps; g.beginPath(); g.arc(cx + Math.cos(th) * R * t, cy + Math.sin(th) * R * t, 2.4, 0, Math.PI * 2); g.fill(); }
+    }
+    g.fillStyle = "#c9cfdb"; g.fillText("screen view: rays marched outward", 8, 14);
+    $("kcap").textContent = `${dirs} directions × ${steps} steps = ${dirs * steps} taps. Each ray keeps the highest horizon it has seen.`;
+  }
+}
+window.addEventListener("resize", drawKernel);
+
+// ---------- math ----------
+const V3 = { sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], norm: a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; } };
+const M = {
+  mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; },
+  persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; },
+  lookAt(e, c, u) { const z = V3.norm(V3.sub(e, c)), x = V3.norm(V3.cross(u, z)), y = V3.cross(z, x); return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -V3.dot(x, e), -V3.dot(y, e), -V3.dot(z, e), 1]); },
+  dir(m, d) { return V3.norm([m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]]); },
+  trs(t, r, s) {
+    const [cx, cy, cz] = r.map(Math.cos), [sx, sy, sz] = r.map(Math.sin);
+    const Rx = new Float32Array([1, 0, 0, 0, 0, cx, sx, 0, 0, -sx, cx, 0, 0, 0, 0, 1]);
+    const Ry = new Float32Array([cy, 0, -sy, 0, 0, 1, 0, 0, sy, 0, cy, 0, 0, 0, 0, 1]);
+    const Rz = new Float32Array([cz, sz, 0, 0, -sz, cz, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const S = new Float32Array([s[0], 0, 0, 0, 0, s[1], 0, 0, 0, 0, s[2], 0, 0, 0, 0, 1]);
+    const T = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, t[0], t[1], t[2], 1]);
+    return M.mul(T, M.mul(Ry, M.mul(Rx, M.mul(Rz, S))));
+  }
+};
+const lin = c => c.map(x => Math.pow(x, 2.2));
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: false, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+if (!gl.getExtension("EXT_color_buffer_float")) { fail("This demo needs the EXT_color_buffer_float WebGL extension (float render targets), which your GPU doesn't expose."); throw new Error("no float rt"); }
+const timerExt = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+const QUAD_VS = `#version 300 es
+layout(location=0) in vec3 aPos; void main(){ gl_Position = vec4(aPos.xy, 0.0, 1.0); }`;
+
+const gbufProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNor;
+uniform mat4 uModel, uView, uProj;
+out vec3 vPosV; out vec3 vNorV; out vec3 vW;
+void main(){
+  vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz;
+  vec4 v = uView * w; vPosV = v.xyz;
+  vNorV = mat3(uView) * (transpose(inverse(mat3(uModel))) * aNor);
+  gl_Position = uProj * v;
+}`, `#version 300 es
+precision highp float;
+in vec3 vPosV; in vec3 vNorV; in vec3 vW;
+uniform vec3 uColor; uniform int uChecker;
+layout(location=0) out vec4 oAlbedo; layout(location=1) out vec4 oNormal; layout(location=2) out vec4 oDepth;
+void main(){
+  vec3 c = uColor;
+  if (uChecker == 1) { float k = mod(floor(vW.x) + floor(vW.z), 2.0); c *= mix(0.86, 1.0, k); }
+  oAlbedo = vec4(c, 1.0); oNormal = vec4(normalize(vNorV) * 0.5 + 0.5, 1.0); oDepth = vec4(-vPosV.z, 0.0, 0.0, 0.0);
+}`);
+
+const aoProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uDepth, uNormal, uNoise;
+uniform mat4 uProj;
+uniform vec3 uKernel[64];
+uniform int uN, uTech, uNoiseOn, uRange;
+uniform float uRadius, uBias, uPower, uProjScale;
+uniform vec2 uAoSize, uTanHalf;
+out vec4 o;
+float zAt(vec2 uv){ return textureLod(uDepth, uv, 0.0).r; }
+vec3 posAt(vec2 uv){ float z = zAt(uv); return vec3((uv * 2.0 - 1.0) * uTanHalf * z, -z); }
+void main(){
+  vec2 uv = gl_FragCoord.xy / uAoSize;
+  float z0 = zAt(uv);
+  if (z0 > 9000.0) { o = vec4(1.0); return; }
+  vec3 p = vec3((uv * 2.0 - 1.0) * uTanHalf * z0, -z0);
+  vec3 n = normalize(textureLod(uNormal, uv, 0.0).xyz * 2.0 - 1.0);
+  vec3 rv = uNoiseOn == 1 ? texelFetch(uNoise, ivec2(gl_FragCoord.xy) & 3, 0).xyz : vec3(1.0, 0.0, 0.0);
+  float ao = 1.0;
+  if (uTech <= 1) {
+    mat3 B;
+    if (uTech == 0) B = mat3(rv.x, rv.y, 0.0, -rv.y, rv.x, 0.0, 0.0, 0.0, 1.0);
+    else { vec3 t0 = rv - n * dot(rv, n); if (dot(t0, t0) < 1e-4) t0 = vec3(0.0, 1.0, 0.0) - n * n.y; vec3 T = normalize(t0); B = mat3(T, cross(n, T), n); }
+    float occ = 0.0;
+    for (int i = 0; i < 64; i++) {
+      if (i >= uN) break;
+      vec3 s = p + B * uKernel[i] * uRadius;
+      vec4 c = uProj * vec4(s, 1.0);
+      vec2 suv = c.xy / c.w * 0.5 + 0.5;
+      float sz = -zAt(suv);
+      float rc = uRange == 1 ? smoothstep(0.0, 1.0, uRadius / abs(p.z - sz)) : 1.0;
+      occ += (sz >= s.z + uBias ? 1.0 : 0.0) * rc;
+    }
+    ao = 1.0 - occ / float(uN);
+  } else {
+    float ang0 = atan(rv.y, rv.x);
+    float rPx = uRadius * uProjScale / max(-p.z, 0.05);
+    if (uTech == 2) {
+      float r2 = uRadius * uRadius, sum = 0.0;
+      for (int i = 0; i < 64; i++) {
+        if (i >= uN) break;
+        float a = (float(i) + 0.5) / float(uN), th = a * 7.0 * 6.2831853 + ang0;
+        vec2 suv = uv + vec2(cos(th), sin(th)) * a * rPx / uAoSize;
+        vec3 v = posAt(suv) - p;
+        float vv = dot(v, v), vn = dot(v, n);
+        float f = max(r2 - vv, 0.0);
+        sum += f * f * f * max((vn - uBias) / (0.01 + vv), 0.0);
+      }
+      ao = max(0.0, 1.0 - sum * 5.0 / (float(uN) * r2 * r2 * r2));
+    } else {
+      int dirs = uN >= 16 ? 8 : 4; int steps = max(uN / dirs, 1);
+      float jit = fract(rv.x * 13.37 + rv.y * 7.77);
+      float occ = 0.0;
+      for (int d = 0; d < 8; d++) {
+        if (d >= dirs) break;
+        float th = 6.2831853 * float(d) / float(dirs) + ang0;
+        vec2 dir = vec2(cos(th), sin(th));
+        float maxS = clamp(uBias * 5.0, 0.0, 0.5), aoD = 0.0;
+        for (int s = 0; s < 16; s++) {
+          if (s >= steps) break;
+          float t = (float(s) + (uNoiseOn == 1 ? jit : 0.5)) / float(steps);
+          vec3 v = posAt(uv + dir * t * rPx / uAoSize) - p;
+          float L = length(v);
+          if (L < 1e-4 || L > uRadius) continue;
+          float sh = dot(v, n) / L;
+          if (sh > maxS) { aoD += (sh - maxS) * (1.0 - L * L / (uRadius * uRadius)); maxS = sh; }
+        }
+        occ += aoD;
+      }
+      ao = 1.0 - occ / float(dirs);
+    }
+  }
+  o = vec4(pow(clamp(ao, 0.0, 1.0), uPower));
+}`);
+
+const boxProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uSrc; out vec4 o;
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy), sz = textureSize(uSrc, 0); float s = 0.0;
+  for (int y = -2; y < 2; y++) for (int x = -2; x < 2; x++) s += texelFetch(uSrc, clamp(p + ivec2(x, y), ivec2(0), sz - 1), 0).r;
+  o = vec4(s / 16.0);
+}`);
+
+const bilProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uSrc, uDepth; uniform vec2 uDir, uAoSize; out vec4 o;
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy), sz = textureSize(uSrc, 0);
+  float zc = textureLod(uDepth, gl_FragCoord.xy / uAoSize, 0.0).r;
+  float sum = 0.0, ws = 0.0;
+  for (int i = -4; i <= 4; i++) {
+    ivec2 q = clamp(p + ivec2(uDir) * i, ivec2(0), sz - 1);
+    float zs = textureLod(uDepth, (vec2(q) + 0.5) / uAoSize, 0.0).r;
+    float w = exp(-float(i * i) / 18.0) * exp(-abs(zs - zc) / (0.03 * zc + 0.02));
+    sum += texelFetch(uSrc, q, 0).r * w; ws += w;
+  }
+  o = vec4(sum / ws);
+}`);
+
+const compProg = program(QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uAlbedo, uNormal, uDepth, uAoRaw, uAo, uNoise;
+uniform int uView, uSunOn;
+uniform vec2 uOff, uSize, uTex;
+uniform float uSplit;
+uniform vec3 uSunV, uUpV;
+out vec4 o;
+vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+void main(){
+  vec2 uv = (gl_FragCoord.xy - uOff) / uSize;
+  ivec2 p = clamp(ivec2(uv * uTex), ivec2(0), ivec2(uTex) - 1);
+  float Z = texelFetch(uDepth, p, 0).r; bool bg = Z > 9000.0;
+  vec3 A = texelFetch(uAlbedo, p, 0).rgb;
+  vec3 N = normalize(texelFetch(uNormal, p, 0).xyz * 2.0 - 1.0);
+  float aoR = texture(uAoRaw, uv).r, ao = texture(uAo, uv).r;
+  vec3 sky = vec3(0.62, 0.72, 0.92), gnd = vec3(0.30, 0.26, 0.22);
+  vec3 amb = mix(gnd, sky, dot(N, uUpV) * 0.5 + 0.5) * 0.8;
+  vec3 sun = uSunOn == 1 ? vec3(1.0, 0.92, 0.80) * 1.3 * max(dot(N, uSunV), 0.0) : vec3(0.0);
+  vec3 bgc = vec3(0.16, 0.19, 0.25);
+  vec3 col;
+  if (uView == 0 || uView == 6) {
+    float a = uView == 6 ? 1.0 : ao;
+    if (uView == 0 && gl_FragCoord.x - uOff.x < uSplit) a = 1.0;
+    col = bg ? bgc : pow(aces(A * (amb * a + sun) * 0.72), vec3(1.0 / 2.2));
+    if (uView == 0 && uSplit > 0.0 && abs(gl_FragCoord.x - uOff.x - uSplit) < 1.0) col = vec3(1.0);
+  } else if (uView == 1) col = bg ? vec3(0.0) : vec3(1.0 - clamp(Z / 30.0, 0.0, 1.0));
+  else if (uView == 2) col = bg ? bgc : N * 0.5 + 0.5;
+  else if (uView == 3) {
+    ivec2 q = ivec2(uv * vec2(32.0, 32.0 * uSize.y / uSize.x)) & 3;
+    col = texelFetch(uNoise, q, 0).xyz * 0.5 + 0.5; col.b = 0.35;
+  }
+  else if (uView == 4) col = bg ? bgc * 0.6 : vec3(aoR);
+  else col = bg ? bgc * 0.6 : vec3(ao);
+  o = vec4(col, 1.0);
+}`);
+
+// ---------- meshes ----------
+function mesh(pos, nor, idx) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  if (nor) { const n = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, n); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nor), gl.STATIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0); }
+  let count = 0;
+  if (idx) { const i = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW); count = idx.length; }
+  gl.bindVertexArray(null);
+  return { vao, count };
+}
+function cube() {
+  const P = [], N = [], I = [];
+  [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]].forEach((n, f) => {
+    const u = n[1] !== 0 ? [1, 0, 0] : [0, 1, 0], v = V3.cross(n, u);
+    const q = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [0.5 * (n[0] + a * u[0] + b * v[0]), 0.5 * (n[1] + a * u[1] + b * v[1]), 0.5 * (n[2] + a * u[2] + b * v[2])]);
+    q.forEach(p => { P.push(...p); N.push(...n); });
+    const o = f * 4, cr = V3.cross(V3.sub(q[1], q[0]), V3.sub(q[2], q[0]));
+    if (V3.dot(cr, n) > 0) I.push(o, o + 1, o + 2, o, o + 2, o + 3); else I.push(o, o + 2, o + 1, o, o + 3, o + 2);
+  });
+  return mesh(P, N, I);
+}
+function sphere(seg, rings) {
+  const P = [], I = [];
+  for (let r = 0; r <= rings; r++) { const th = Math.PI * r / rings; for (let s = 0; s <= seg; s++) { const ph = 2 * Math.PI * s / seg; P.push(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)); } }
+  const W = seg + 1;
+  for (let r = 0; r < rings; r++) for (let s = 0; s < seg; s++) { const a = r * W + s, b = a + W; I.push(a, a + 1, b, a + 1, b + 1, b); }
+  return mesh(P, P, I);
+}
+const cubeM = cube(), ballM = sphere(40, 24), quad = mesh([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], null, null);
+
+// ---------- scene ----------
+const objs = [];
+const add = (m, t, r, s, c, checker = 0) => { const o = { mesh: m, t, r, s, c: lin(c), checker, M: M.trs(t, r, s) }; objs.push(o); return o; };
+const white = [0.86, 0.85, 0.82];
+add(cubeM, [0, -0.1, 0], [0, 0, 0], [40, 0.2, 40], [0.80, 0.78, 0.74], 1);
+add(cubeM, [0, 3, -6.1], [0, 0, 0], [18, 6, 0.2], white);
+add(cubeM, [-8.1, 3, 1], [0, 0, 0], [0.2, 6, 14], white);
+// stairs against the back wall
+for (let i = 0; i < 6; i++) { const h = (i + 1) * 0.25; add(cubeM, [5, h / 2, -3.25 - i * 0.5], [0, 0, 0], [3, h, 0.5], [0.78, 0.74, 0.68]); }
+// packed blocks
+const RB = rng(9);
+for (let x = 0; x < 3; x++) for (let z = 0; z < 3; z++) { const h = 0.4 + RB() * 1.8; add(cubeM, [-6 + x * 0.82, h / 2, -4.6 + z * 0.82], [0, 0, 0], [0.8, h, 0.8], [0.72, 0.76, 0.82]); }
+// table with items
+add(cubeM, [1.5, 0.9, -2.5], [0, 0, 0], [2.4, 0.1, 1.4], [0.70, 0.52, 0.38]);
+for (const [x, z] of [[0.4, -3.1], [2.6, -3.1], [0.4, -1.9], [2.6, -1.9]]) add(cubeM, [x, 0.425, z], [0, 0, 0], [0.09, 0.85, 0.09], [0.60, 0.44, 0.32]);
+add(ballM, [1.0, 1.2, -2.6], [0, 0, 0], [0.25, 0.25, 0.25], [0.85, 0.40, 0.32]);
+add(cubeM, [2.0, 1.1, -2.3], [0, 0.5, 0], [0.4, 0.3, 0.4], [0.40, 0.60, 0.85]);
+// sphere pile
+for (const [x, z, r] of [[-0.5, 1.3, 0.5], [0.5, 1.3, 0.5], [0, 2.15, 0.5], [-1.4, 2.0, 0.35], [1.2, 2.3, 0.3]]) add(ballM, [x, r, z], [0, 0, 0], [r, r, r], [0.84, 0.82, 0.78]);
+// leaning plank
+add(cubeM, [-7.45, 1.55, 2.5], [0, 0, -0.32], [0.12, 3.4, 1.0], [0.76, 0.62, 0.46]);
+// hovering cube
+const hover = add(cubeM, [-3, 0.75, 2.2], [0, 0.4, 0], [1, 1, 1], [0.86, 0.80, 0.55]);
+function updateHover() { hover.t = [-3, 0.5 + state.hover, 2.2]; hover.M = M.trs(hover.t, hover.r, hover.s); }
+
+// ---------- noise ----------
+const noiseTex = gl.createTexture();
+{
+  const r = rng(77), d = new Float32Array(16 * 4);
+  for (let i = 0; i < 16; i++) { const a = r() * Math.PI * 2; d.set([Math.cos(a), Math.sin(a), 0, 1], i * 4); }
+  gl.bindTexture(gl.TEXTURE_2D, noiseTex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, 4, 4);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4, 4, gl.RGBA, gl.FLOAT, d);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+}
+
+// ---------- targets ----------
+let W = 0, H = 0, AW = 0, AH = 0, T = null, halfNow = null;
+function tex(fmt, w, h, filter) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, fmt, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function fbo(colors, depth) {
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  colors.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  if (depth) gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+  gl.drawBuffers(colors.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("framebuffer incomplete");
+  return f;
+}
+function makeTargets() {
+  if (T) { for (const k in T) { const o = T[k]; if (o instanceof WebGLTexture) gl.deleteTexture(o); else if (o instanceof WebGLFramebuffer) gl.deleteFramebuffer(o); else if (o instanceof WebGLRenderbuffer) gl.deleteRenderbuffer(o); } }
+  const t = {};
+  AW = state.half ? Math.max(1, W >> 1) : W; AH = state.half ? Math.max(1, H >> 1) : H; halfNow = state.half;
+  t.albedo = tex(gl.RGBA8, W, H, gl.NEAREST); t.normal = tex(gl.RGBA8, W, H, gl.NEAREST); t.zbuf = tex(gl.R32F, W, H, gl.NEAREST);
+  t.depth = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, t.depth); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, W, H);
+  t.g = fbo([t.albedo, t.normal, t.zbuf], t.depth);
+  t.aoRaw = tex(gl.R8, AW, AH, gl.LINEAR); t.aoTmp = tex(gl.R8, AW, AH, gl.LINEAR); t.aoBlur = tex(gl.R8, AW, AH, gl.LINEAR);
+  t.fRaw = fbo([t.aoRaw]); t.fTmp = fbo([t.aoTmp]); t.fBlur = fbo([t.aoBlur]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  T = t;
+  $("sRes").textContent = `${AW}×${AH}${state.half ? " (half)" : ""}`;
+}
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (w !== W || h !== H || halfNow !== state.half) { W = w; H = h; canvas.width = w; canvas.height = h; makeTargets(); stripEl.style.setProperty("--ar", (w / h).toFixed(3)); rectsDirty = true; }
+  if (rectsDirty) { rectsDirty = false; measureThumbs(); }
+}
+let rectsDirty = true;
+function measureThumbs() {
+  const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+  for (const t of thumbs) {
+    const r = t.el.getBoundingClientRect();
+    t.rect = [Math.round((r.left - cr.left + 1) * sx), Math.round((cr.bottom - r.bottom + 1) * sy), Math.round((r.width - 2) * sx), Math.round((r.height - 2) * sy)];
+  }
+}
+window.addEventListener("resize", () => rectsDirty = true);
+
+// ---------- camera ----------
+const cam = { yaw: 0.85, pitch: 0.38, dist: 11.5, tgt: [-1.5, 1.0, -1.5] };
+const camDefault = JSON.stringify(cam);
+let drag = null; const pointers = new Map();
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); if (!pointers.size) drag = null; });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [c, d] = [...pointers.values()]; const d1 = Math.hypot(c[0] - d[0], c[1] - d[1]);
+    if (d0 > 0 && d1 > 0) cam.dist = Math.min(40, Math.max(1.5, cam.dist * d0 / d1));
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) { const s = cam.dist * 0.0016, cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw); cam.tgt[0] += sy * dx * s; cam.tgt[2] -= cy * dx * s; cam.tgt[1] = Math.max(0, cam.tgt[1] + dy * s); }
+  else { cam.yaw += dx * 0.006; cam.pitch = Math.max(0.02, Math.min(1.5, cam.pitch + dy * 0.006)); }
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(40, Math.max(1.5, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+$("reset").addEventListener("click", () => Object.assign(cam, JSON.parse(camDefault)));
+
+// ---------- timers ----------
+const timers = {};
+function tBegin(name) { if (!timerExt) return false; const t = timers[name] || (timers[name] = { q: null, ms: null }); if (t.q) return false; t.q = gl.createQuery(); gl.beginQuery(timerExt.TIME_ELAPSED_EXT, t.q); return true; }
+function tEnd(s) { if (s) gl.endQuery(timerExt.TIME_ELAPSED_EXT); }
+function tPoll() {
+  if (!timerExt) return; const dj = gl.getParameter(timerExt.GPU_DISJOINT_EXT);
+  for (const k in timers) { const t = timers[k]; if (t.q && gl.getQueryParameter(t.q, gl.QUERY_RESULT_AVAILABLE)) { if (!dj) { const ms = gl.getQueryParameter(t.q, gl.QUERY_RESULT) / 1e6; t.ms = t.ms == null ? ms : t.ms * 0.85 + ms * 0.15; } gl.deleteQuery(t.q); t.q = null; } }
+}
+const msTxt = k => !timerExt ? "n/a in this browser" : (timers[k] && timers[k].ms != null) ? timers[k].ms.toFixed(2) + " ms" : "measuring…";
+
+// ---------- frame ----------
+const FOV = 0.95;
+function bindTex(unit, t) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); }
+function drawComposite(view, x, y, w, h, split, sunV, upV) {
+  const u = compProg.u;
+  gl.viewport(x, y, w, h);
+  gl.uniform1i(u.uView, view); gl.uniform2f(u.uOff, x, y); gl.uniform2f(u.uSize, w, h); gl.uniform1f(u.uSplit, split);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+let frame = 0, fpsT = performance.now(), fpsN = 0, fps = 0;
+function render(now) {
+  requestAnimationFrame(render);
+  fpsN++; if (now - fpsT > 500) { fps = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; }
+  resize(); tPoll();
+  const eye = [cam.tgt[0] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), cam.tgt[1] + cam.dist * Math.sin(cam.pitch), cam.tgt[2] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw)];
+  const view = M.lookAt(eye, cam.tgt, [0, 1, 0]), proj = M.persp(FOV, W / H, 0.05, 200);
+  gl.disable(gl.BLEND);
+
+  // 1) G-buffer
+  const tg = tBegin("g");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.g); gl.viewport(0, 0, W, H);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+  gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 1, [0.5, 0.5, 1, 0]); gl.clearBufferfv(gl.COLOR, 2, [10000, 0, 0, 0]);
+  gl.clearBufferfv(gl.DEPTH, 0, [1]);
+  gl.useProgram(gbufProg.p);
+  gl.uniformMatrix4fv(gbufProg.u.uView, false, view); gl.uniformMatrix4fv(gbufProg.u.uProj, false, proj);
+  for (const o of objs) {
+    gl.uniformMatrix4fv(gbufProg.u.uModel, false, o.M); gl.uniform3fv(gbufProg.u.uColor, o.c); gl.uniform1i(gbufProg.u.uChecker, o.checker);
+    gl.bindVertexArray(o.mesh.vao); gl.drawElements(gl.TRIANGLES, o.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  tEnd(tg);
+  gl.bindVertexArray(quad.vao);
+
+  // 2) AO pass
+  const ta = tBegin("ao");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.fRaw); gl.viewport(0, 0, AW, AH);
+  gl.useProgram(aoProg.p);
+  bindTex(0, T.zbuf); bindTex(1, T.normal); bindTex(2, noiseTex);
+  const u = aoProg.u;
+  gl.uniform1i(u.uDepth, 0); gl.uniform1i(u.uNormal, 1); gl.uniform1i(u.uNoise, 2);
+  const th = Math.tan(FOV / 2); gl.uniform2f(u.uTanHalf, th * W / H, th);
+  gl.uniformMatrix4fv(u.uProj, false, proj);
+  if (kernelDirty) { gl.uniform3fv(u.uKernel, kernel); kernelDirty = false; }
+  gl.uniform1i(u.uN, state.samples); gl.uniform1i(u.uTech, state.tech); gl.uniform1i(u.uNoiseOn, state.noise ? 1 : 0); gl.uniform1i(u.uRange, state.range ? 1 : 0);
+  gl.uniform1f(u.uRadius, state.radius); gl.uniform1f(u.uBias, state.bias); gl.uniform1f(u.uPower, state.power);
+  gl.uniform1f(u.uProjScale, AH / (2 * Math.tan(FOV / 2))); gl.uniform2f(u.uAoSize, AW, AH);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  tEnd(ta);
+
+  // 3) blur
+  const tb = tBegin("blur");
+  let aoFinal = T.aoRaw;
+  if (state.blur === 1) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fBlur); gl.useProgram(boxProg.p); bindTex(3, T.aoRaw); gl.uniform1i(boxProg.u.uSrc, 3);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); aoFinal = T.aoBlur;
+  } else if (state.blur === 2) {
+    gl.useProgram(bilProg.p); gl.uniform1i(bilProg.u.uDepth, 0); gl.uniform2f(bilProg.u.uAoSize, AW, AH);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fTmp); bindTex(3, T.aoRaw); gl.uniform1i(bilProg.u.uSrc, 3); gl.uniform2f(bilProg.u.uDir, 1, 0); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fBlur); bindTex(3, T.aoTmp); gl.uniform2f(bilProg.u.uDir, 0, 1); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    aoFinal = T.aoBlur;
+  }
+  tEnd(tb);
+
+  // 4) composite + thumbnails
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(compProg.p);
+  bindTex(0, T.albedo); bindTex(1, T.normal); bindTex(2, T.zbuf); bindTex(3, T.aoRaw); bindTex(4, aoFinal); bindTex(5, noiseTex);
+  const cu = compProg.u;
+  gl.uniform1i(cu.uAlbedo, 0); gl.uniform1i(cu.uNormal, 1); gl.uniform1i(cu.uDepth, 2); gl.uniform1i(cu.uAoRaw, 3); gl.uniform1i(cu.uAo, 4); gl.uniform1i(cu.uNoise, 5);
+  gl.uniform2f(cu.uTex, W, H); gl.uniform1i(cu.uSunOn, state.sun ? 1 : 0);
+  gl.uniform3fv(cu.uSunV, M.dir(view, V3.norm([0.5, 0.75, 0.35]))); gl.uniform3fv(cu.uUpV, M.dir(view, [0, 1, 0]));
+  gl.clearColor(0.05, 0.06, 0.08, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  drawComposite(state.view, 0, 0, W, H, state.split / 100 * W);
+  if (state.strip) {
+    for (const t of thumbs) { const [x, y, w, h] = t.rect || [0, 0, 0, 0]; if (w > 4 && h > 4) drawComposite(t.v, x, y, w, h, 0); }
+  }
+
+  if (frame++ % 15 === 0) {
+    const tpp = state.tech === 3 ? (state.samples >= 16 ? 8 : 4) * Math.max(1, Math.floor(state.samples / (state.samples >= 16 ? 8 : 4))) : state.samples;
+    const taps = tpp * AW * AH;
+    $("sTpp").textContent = String(tpp);
+    $("sTaps").textContent = (taps / 1e6).toFixed(1) + " M";
+    $("hudTaps").innerHTML = `<b>${tpp}</b> taps/px · ${(taps / 1e6).toFixed(1)} M reads per frame`;
+    $("gG").textContent = msTxt("g"); $("gA").textContent = msTxt("ao"); $("gB").textContent = state.blur ? msTxt("blur") : "skipped";
+    $("hudTime").innerHTML = `<b>${fps.toFixed(0)} fps</b>` + (timerExt ? ` · AO ${msTxt("ao")} · blur ${state.blur ? msTxt("blur") : "off"}` : "");
+  }
+}
+syncTech(); setView(0); updateHover();
+try { resize(); requestAnimationFrame(render); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

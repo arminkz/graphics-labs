@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coordinate Spaces Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL "lab view" with an inset of the camera's real image and a stage strip; instrument panel on the right. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #ffd34d;
+  --amber: #f2a93b;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 380px; height: 100%; }
+.view { position: relative; min-height: 340px; overflow: hidden; }
+canvas#c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas#c:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; max-width: calc(100% - 300px); }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.82); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { position: absolute; left: 16px; top: 46px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.inset-label { position: absolute; font: 500 11px/1.2 var(--font-mono); color: var(--text); background: rgba(13,15,19,.85); padding: 3px 6px; border-radius: 4px 4px 0 0; pointer-events: none; }
+.lbl { position: absolute; transform: translate(8px, -50%); font: 500 11px/1.25 var(--font-mono); color: var(--text); background: rgba(13,15,19,.78); border: 1px solid var(--line); padding: 2px 6px; border-radius: 4px; white-space: nowrap; pointer-events: none; }
+.lbl.sel { border-color: var(--accent); color: var(--accent); }
+.lbl.cam { border-color: #7a8396; }
+.lbl.fr { border-color: var(--amber); color: #ffd9a0; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 140px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.pipe { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin-bottom: 6px; }
+.pipe button { font: 500 11px/1.2 var(--font-body); padding: 6px 2px; border-radius: 5px; border: 1px solid var(--line); background: #11141a; color: var(--muted); cursor: pointer; }
+.pipe button.on { border-color: var(--accent); color: var(--accent); background: rgba(255,211,77,.08); }
+.ops { display: grid; grid-template-columns: repeat(5, 1fr); margin: 0 calc(100% / 12); font: 11px var(--font-mono); color: var(--muted); text-align: center; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 10px; }
+.explain h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.explain .also { color: var(--muted); font-weight: 400; font-size: 12px; }
+.explain .next { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: #c9cfdb; }
+.explain code, td code { font: 12px var(--font-mono); color: var(--accent); }
+.row { display: grid; grid-template-columns: 96px 1fr 58px; align-items: center; gap: 8px; margin: 5px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--accent); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+table.vt { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.vt td { padding: 4px 4px; border-bottom: 1px solid var(--line); font: 11.5px var(--font-mono); font-variant-numeric: tabular-nums; vertical-align: top; }
+table.vt td:first-child { font-family: var(--font-body); color: var(--muted); width: 66px; }
+table.vt tr.on td { background: rgba(255,211,77,.08); color: var(--accent); }
+table.vt tr.on td:first-child { color: var(--accent); }
+table.vt tr.out td:nth-child(2) { color: #ff8a7a; }
+.mats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mat h4 { margin: 0 0 3px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+.mat pre { margin: 0; font: 10.5px/1.45 var(--font-mono); background: #0f1217; border: 1px solid var(--line); border-radius: 5px; padding: 5px 6px; overflow-x: auto; }
+.note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 64vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+  .hud { max-width: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view" id="viewEl">
+    <canvas id="c" aria-label="3D view of the scene in the selected coordinate space"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudStage">stage</span>
+      <span class="chip" id="hudW">w</span>
+    </div>
+    <div class="hint">Drag to orbit the lab view · scroll to zoom. This is not the scene camera: the scene camera is the amber frustum.</div>
+    <div id="labels"></div>
+    <div class="inset-label" id="insetLbl">Camera's image</div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Coordinate spaces lab</h1>
+      <p class="sub">One house, one camera, six spaces. Drag the slider to push every vertex through the pipeline: model matrix, view matrix, projection matrix, perspective divide, viewport transform.</p>
+    </div>
+
+    <section>
+      <h2>Pipeline</h2>
+      <div class="pipe" id="pipe"></div>
+      <div class="ops"><span>×M</span><span>×V</span><span>×P</span><span>÷w</span><span>vp</span></div>
+      <input id="t" type="range" min="0" max="5" step="0.01" value="1" aria-label="Pipeline position from object space to screen space">
+      <div class="btns">
+        <button class="p" type="button" id="play">Play the whole pipeline</button>
+        <button class="p" type="button" id="resetLab">Reset lab view</button>
+      </div>
+      <div class="explain" id="explain"></div>
+    </section>
+
+    <section>
+      <h2>Follow one vertex</h2>
+      <div class="row"><label for="vsel">Vertex</label><select id="vsel"></select></div>
+      <table class="vt" id="vt"></table>
+      <p class="note">Red coordinates: outside the view volume, so the GPU would clip it.</p>
+    </section>
+
+    <section>
+      <h2>Matrices (row-major display)</h2>
+      <div class="mats">
+        <div class="mat"><h4>M (model)</h4><pre id="mM"></pre></div>
+        <div class="mat"><h4>V (view)</h4><pre id="mV"></pre></div>
+        <div class="mat"><h4>P (projection)</h4><pre id="mP"></pre></div>
+      </div>
+      <p class="note">p<sub>clip</sub> = P · V · M · p<sub>object</sub>. Note the bottom row of P: it copies −z<sub>view</sub> into w.</p>
+    </section>
+
+    <section>
+      <h2>Object (model matrix)</h2>
+      <div class="row"><label for="ox">Position X</label><input id="ox" type="range" min="-4" max="4" step="0.05" value="0"><output id="oxV"></output></div>
+      <div class="row"><label for="oz">Position Z</label><input id="oz" type="range" min="-4" max="4" step="0.05" value="0"><output id="ozV"></output></div>
+      <div class="row"><label for="oy">Position Y</label><input id="oy" type="range" min="-1" max="3" step="0.05" value="0"><output id="oyV"></output></div>
+      <div class="row"><label for="ory">Rotate Y</label><input id="ory" type="range" min="-180" max="180" step="1" value="25"><output id="oryV"></output></div>
+      <div class="row"><label for="orx">Tilt X</label><input id="orx" type="range" min="-60" max="60" step="1" value="0"><output id="orxV"></output></div>
+      <div class="row"><label for="os">Scale</label><input id="os" type="range" min="0.3" max="2.5" step="0.05" value="1.2"><output id="osV"></output></div>
+    </section>
+
+    <section>
+      <h2>Scene camera (view and projection)</h2>
+      <div class="row"><label for="cy">Orbit yaw</label><input id="cy" type="range" min="-180" max="180" step="1" value="35"><output id="cyV"></output></div>
+      <div class="row"><label for="cp">Orbit pitch</label><input id="cp" type="range" min="-30" max="80" step="1" value="18"><output id="cpV"></output></div>
+      <div class="row"><label for="cd">Distance</label><input id="cd" type="range" min="1" max="12" step="0.05" value="5"><output id="cdV"></output></div>
+      <div class="row"><label for="proj">Projection</label><select id="proj"><option value="persp">Perspective</option><option value="ortho">Orthographic</option></select></div>
+      <div class="row"><label for="fov">Field of view</label><input id="fov" type="range" min="15" max="120" step="1" value="55"><output id="fovV"></output></div>
+      <div class="row"><label for="osz">Ortho height</label><input id="osz" type="range" min="0.5" max="6" step="0.05" value="2"><output id="oszV"></output></div>
+      <div class="row"><label for="near">Near plane</label><input id="near" type="range" min="0.1" max="3" step="0.05" value="0.6"><output id="nearV"></output></div>
+      <div class="row"><label for="far">Far plane</label><input id="far" type="range" min="3" max="30" step="0.5" value="10"><output id="farV"></output></div>
+      <div class="row"><label for="vp">Viewport</label><select id="vp"><option value="640x360">640 × 360 (16:9)</option><option value="800x600">800 × 600 (4:3)</option><option value="360x640">360 × 640 (portrait)</option><option value="1920x1080">1920 × 1080</option></select></div>
+    </section>
+
+    <section>
+      <h2>Show</h2>
+      <div class="checks">
+        <label><input type="checkbox" id="sGrid" checked> World grid</label>
+        <label><input type="checkbox" id="sFr" checked> Camera frustum and depth ticks (1 m apart)</label>
+        <label><input type="checkbox" id="sAxes" checked> Axes (object axes bright, world axes dim)</label>
+        <label><input type="checkbox" id="sLbl" checked> Coordinate labels</label>
+        <label><input type="checkbox" id="sStrip" checked> Stage thumbnails</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Drag the pipeline slider slowly from <b>Object</b> to <b>Screen</b> while watching the yellow vertex and its row in the table.</li>
+        <li>Stop at <b>NDC</b>: the frustum is now a cube, and the amber depth ticks bunch toward the far side. Set <b>Near plane</b> to 0.1 and they bunch even more. That is depth precision going away.</li>
+        <li>Switch to <b>Orthographic</b>: w stays 1, the divide does nothing, and parallel lines stay parallel.</li>
+        <li>At <b>Clip</b>, move the object with <b>Position X</b> until a vertex turns red in the table: x has passed ±w, so it is outside the frustum.</li>
+        <li>Set the viewport to <b>360 × 640</b>: NDC is the same cube, only the last step stretches it to the new pixel size.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+// ---------- content ----------
+const STAGES = [
+  { name: "Object space", also: "local / model space",
+    what: "Coordinates relative to the object's own origin, as authored in a modeling tool. The house was built around the center of its floor, so that point is (0, 0, 0) here no matter where the house is placed. The world grid and the camera are drawn relative to the house, which is why they look shifted and tilted.",
+    next: "<b>Model matrix</b> <code>M = T · R · S</code> places the object in the world: <code>p_world = M · p_object</code>." },
+  { name: "World space", also: "",
+    what: "One shared space for every object, light and camera. Physics, gameplay and most lighting happen here. The house sits where its model matrix put it, and the camera is just another object with a position and an orientation.",
+    next: "<b>View matrix</b> <code>V = inverse(camera's world transform)</code> moves the whole world so the camera lands at the origin: <code>p_view = V · p_world</code>." },
+  { name: "View space", also: "eye / camera space",
+    what: "The camera sits at the origin, +X points right, +Y up, and it looks down −Z (the OpenGL convention). Nothing is distorted yet: distances and angles are the same as in world space, only the frame of reference moved. A point's distance in front of the camera is simply −z.",
+    next: "<b>Projection matrix</b>: <code>p_clip = P · p_view</code>. For perspective, its bottom row copies −z into w, which is what will make far things smaller." },
+  { name: "Clip space", also: "4D homogeneous",
+    what: "Coordinates are now 4D: (x, y, z, w). A point is inside the view volume when −w ≤ x, y, z ≤ w. The GPU clips triangles here, before dividing, because a point behind the camera has w < 0 and would flip across the screen after the divide. This view plots x, y, z and leaves w out.",
+    next: "<b>Perspective divide</b>, done by the hardware: <code>p_ndc = p_clip.xyz / p_clip.w</code>." },
+  { name: "NDC", also: "normalized device coordinates",
+    what: "The frustum has become the cube [−1, 1]³ (drawn 3× larger here). Dividing by w shrank distant things, so lines that were parallel now converge. The amber depth ticks are 1 m apart in view space but bunch toward the far side: NDC z is not linear in distance, so most depth precision sits near the near plane. OpenGL's NDC is left-handed (+z points into the screen); Direct3D, Vulkan and Metal use z in [0, 1] instead of [−1, 1].",
+    next: "<b>Viewport transform</b>: <code>x_px = (x + 1) / 2 · width</code>, <code>y_px = (y + 1) / 2 · height</code>, <code>depth = (z + 1) / 2</code>." },
+  { name: "Screen space", also: "window / pixel space",
+    what: "Pixel coordinates, plus a depth value in [0, 1] for the depth buffer (drawn here as a thin slab). The rasterizer works in this space: it finds which pixels each triangle covers and interpolates attributes across them. In OpenGL and WebGL, (0, 0) is the bottom-left corner; Direct3D, Vulkan and Metal put it at the top-left, so y is flipped.",
+    next: "That's the end of the vertex pipeline. Compare this shape with the camera's real image in the top-right corner: they match." }
+];
+const SHORT = ["Object", "World", "View", "Clip", "NDC", "Screen"];
+const VNAMES = ["front bottom left", "front bottom right", "front top right", "front top left", "back bottom left", "back bottom right", "back top right", "back top left", "roof ridge, left end", "roof ridge, right end"];
+
+// ---------- state + UI ----------
+const S = { t: 1, tTarget: null, playing: false, sel: 9,
+  ox: 0, oy: 0, oz: 0, ory: 25, orx: 0, os: 1.2,
+  cy: 35, cp: 18, cd: 5, proj: "persp", fov: 55, osz: 2, near: 0.6, far: 10, vw: 640, vh: 360,
+  grid: true, fr: true, axes: true, lbl: true, strip: true };
+const FMT = { ox: v => v.toFixed(2), oy: v => v.toFixed(2), oz: v => v.toFixed(2), ory: v => v + "°", orx: v => v + "°", os: v => v.toFixed(2) + "×",
+  cy: v => v + "°", cp: v => v + "°", cd: v => v.toFixed(2), fov: v => v + "°", osz: v => v.toFixed(2), near: v => v.toFixed(2), far: v => v.toFixed(1) };
+for (const k in FMT) {
+  const el = $(k), out = $(k + "V");
+  const upd = () => { S[k] = +el.value; out.textContent = FMT[k](S[k]); };
+  el.addEventListener("input", upd); upd();
+}
+$("proj").addEventListener("change", e => S.proj = e.target.value);
+$("vp").addEventListener("change", e => { const [w, h] = e.target.value.split("x").map(Number); S.vw = w; S.vh = h; layoutDirty = true; });
+[["sGrid", "grid"], ["sFr", "fr"], ["sAxes", "axes"], ["sLbl", "lbl"], ["sStrip", "strip"]].forEach(([id, k]) => $(id).addEventListener("change", e => { S[k] = e.target.checked; if (k === "strip") { stripEl.style.display = S.strip ? "" : "none"; layoutDirty = true; } }));
+VNAMES.forEach((n, i) => { const o = document.createElement("option"); o.value = i; o.textContent = `#${i} ${n}`; $("vsel").appendChild(o); });
+$("vsel").value = String(S.sel); $("vsel").addEventListener("change", e => S.sel = +e.target.value);
+$("t").addEventListener("input", e => { S.t = +e.target.value; S.tTarget = null; S.playing = false; syncPlay(); });
+const pipeEl = $("pipe");
+SHORT.forEach((n, i) => { const b = document.createElement("button"); b.type = "button"; b.textContent = n; b.addEventListener("click", () => goTo(i)); pipeEl.appendChild(b); });
+function goTo(i) { S.tTarget = i; S.playing = false; syncPlay(); }
+let playDir = 1;
+$("play").addEventListener("click", () => { S.playing = !S.playing; if (S.playing) { S.tTarget = null; if (S.t >= 4.99) S.t = 0; playDir = 1; } syncPlay(); });
+function syncPlay() { $("play").textContent = S.playing ? "Pause" : "Play the whole pipeline"; }
+const stripEl = $("strip");
+const thumbs = SHORT.map((n, i) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Go to " + STAGES[i].name;
+  b.innerHTML = `<span>${i + 1} ${n}</span>`; b.addEventListener("click", () => goTo(i)); stripEl.appendChild(b);
+  return { i, el: b };
+});
+let lastStage = -1;
+function syncStage() {
+  const k = Math.round(S.t);
+  if (k === lastStage) return; lastStage = k;
+  [...pipeEl.children].forEach((b, i) => b.classList.toggle("on", i === k));
+  thumbs.forEach(t => t.el.classList.toggle("on", t.i === k));
+  const st = STAGES[k];
+  $("explain").innerHTML = `<h3>${st.name}${st.also ? ` <span class="also">(${st.also})</span>` : ""}</h3>${st.what}<div class="next">${st.next}</div>`;
+}
+
+// ---------- math (column-major 4×4) ----------
+const V3 = { sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }, lerp: (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f] };
+const M4 = {
+  I: () => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+  mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; },
+  T: (x, y, z) => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]),
+  S: s => new Float32Array([s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1]),
+  Ry: a => { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); },
+  Rx: a => { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); },
+  persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; },
+  ortho(l, r, b, t, n, f) { const o = new Float32Array(16); o[0] = 2 / (r - l); o[5] = 2 / (t - b); o[10] = -2 / (f - n); o[12] = -(r + l) / (r - l); o[13] = -(t + b) / (t - b); o[14] = -(f + n) / (f - n); o[15] = 1; return o; },
+  lookAt(e, c, u) { const z = V3.norm(V3.sub(e, c)), x = V3.norm(V3.cross(u, z)), y = V3.cross(z, x); return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -V3.dot(x, e), -V3.dot(y, e), -V3.dot(z, e), 1]); },
+  x3(m, p) { return [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]]; },
+  x4(m, p) { return [0, 1, 2, 3].map(r => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r] * p[3]); },
+  inv(m) {
+    const a = m, o = new Float32Array(16);
+    const b00 = a[0] * a[5] - a[1] * a[4], b01 = a[0] * a[6] - a[2] * a[4], b02 = a[0] * a[7] - a[3] * a[4], b03 = a[1] * a[6] - a[2] * a[5], b04 = a[1] * a[7] - a[3] * a[5], b05 = a[2] * a[7] - a[3] * a[6];
+    const b06 = a[8] * a[13] - a[9] * a[12], b07 = a[8] * a[14] - a[10] * a[12], b08 = a[8] * a[15] - a[11] * a[12], b09 = a[9] * a[14] - a[10] * a[13], b10 = a[9] * a[15] - a[11] * a[13], b11 = a[10] * a[15] - a[11] * a[14];
+    const det = 1 / (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06);
+    o[0] = (a[5] * b11 - a[6] * b10 + a[7] * b09) * det; o[1] = (a[2] * b10 - a[1] * b11 - a[3] * b09) * det; o[2] = (a[13] * b05 - a[14] * b04 + a[15] * b03) * det; o[3] = (a[10] * b04 - a[9] * b05 - a[11] * b03) * det;
+    o[4] = (a[6] * b08 - a[4] * b11 - a[7] * b07) * det; o[5] = (a[0] * b11 - a[2] * b08 + a[3] * b07) * det; o[6] = (a[14] * b02 - a[12] * b05 - a[15] * b01) * det; o[7] = (a[8] * b05 - a[10] * b02 + a[11] * b01) * det;
+    o[8] = (a[4] * b10 - a[5] * b08 + a[7] * b06) * det; o[9] = (a[1] * b08 - a[0] * b10 - a[3] * b06) * det; o[10] = (a[12] * b04 - a[13] * b02 + a[15] * b00) * det; o[11] = (a[9] * b02 - a[8] * b04 - a[11] * b00) * det;
+    o[12] = (a[5] * b07 - a[4] * b09 - a[6] * b06) * det; o[13] = (a[0] * b09 - a[1] * b07 + a[2] * b06) * det; o[14] = (a[13] * b01 - a[12] * b03 - a[14] * b00) * det; o[15] = (a[8] * b03 - a[9] * b01 + a[10] * b00) * det;
+    return o;
+  }
+};
+// rotation part of a rigid matrix → quaternion → slerp from identity
+function quatFrom(m) {
+  const m00 = m[0], m01 = m[4], m02 = m[8], m10 = m[1], m11 = m[5], m12 = m[9], m20 = m[2], m21 = m[6], m22 = m[10], tr = m00 + m11 + m22;
+  let x, y, z, w;
+  if (tr > 0) { const s = 0.5 / Math.sqrt(tr + 1); w = 0.25 / s; x = (m21 - m12) * s; y = (m02 - m20) * s; z = (m10 - m01) * s; }
+  else if (m00 > m11 && m00 > m22) { const s = 2 * Math.sqrt(1 + m00 - m11 - m22); w = (m21 - m12) / s; x = 0.25 * s; y = (m01 + m10) / s; z = (m02 + m20) / s; }
+  else if (m11 > m22) { const s = 2 * Math.sqrt(1 + m11 - m00 - m22); w = (m02 - m20) / s; x = (m01 + m10) / s; y = 0.25 * s; z = (m12 + m21) / s; }
+  else { const s = 2 * Math.sqrt(1 + m22 - m00 - m11); w = (m10 - m01) / s; x = (m02 + m20) / s; y = (m12 + m21) / s; z = 0.25 * s; }
+  return [x, y, z, w];
+}
+function slerpId(q, f) {
+  let [x, y, z, w] = q; if (w < 0) { x = -x; y = -y; z = -z; w = -w; }
+  const th = Math.acos(Math.min(1, w));
+  if (th < 1e-5) return [0, 0, 0, 1];
+  const a = Math.sin((1 - f) * th) / Math.sin(th), b = Math.sin(f * th) / Math.sin(th);
+  return [b * x, b * y, b * z, a + b * w];
+}
+function quatMat(q, t) {
+  const [x, y, z, w] = q;
+  return new Float32Array([1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w), 0, 2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w), 0, 2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y), 0, t[0], t[1], t[2], 1]);
+}
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: true, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog = (() => {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec4 aCol;
+uniform mat4 uVP; uniform float uPt;
+out vec3 vP; out vec4 vC;
+void main(){ vP = aPos; vC = aCol; gl_Position = uVP * vec4(aPos, 1.0); gl_PointSize = uPt; }`));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, `#version 300 es
+precision highp float;
+in vec3 vP; in vec4 vC; uniform int uShade; out vec4 o;
+void main(){
+  if (uShade == 1) {
+    vec3 n = normalize(cross(dFdx(vP), dFdy(vP)));
+    float s = 0.55 + 0.45 * abs(dot(n, normalize(vec3(0.45, 0.8, 0.4))));
+    o = vec4(vC.rgb * s, vC.a);
+  } else if (uShade == 2) {
+    vec2 d = gl_PointCoord - 0.5; if (dot(d, d) > 0.25) discard;
+    o = vC;
+  } else o = vC;
+}`));
+  gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return { p, uVP: gl.getUniformLocation(p, "uVP"), uPt: gl.getUniformLocation(p, "uPt"), uShade: gl.getUniformLocation(p, "uShade") };
+})();
+const vao = gl.createVertexArray(), vbo = gl.createBuffer();
+gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 28, 12);
+function drawArr(mode, data, n, shade, pt = 1) {
+  if (!n) return;
+  gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, n * 7), gl.STREAM_DRAW);
+  gl.uniform1i(prog.uShade, shade); gl.uniform1f(prog.uPt, pt);
+  gl.drawArrays(mode, 0, n);
+}
+
+// ---------- scene definition ----------
+const HX = 0.5, HZ = 0.4, HB = 0.7, HR = 1.15;
+const HOUSE = [[-HX, 0, HZ], [HX, 0, HZ], [HX, HB, HZ], [-HX, HB, HZ], [-HX, 0, -HZ], [HX, 0, -HZ], [HX, HB, -HZ], [-HX, HB, -HZ], [-HX, HR, 0], [HX, HR, 0]];
+const DOOR = [[-0.12, 0, HZ + 0.003], [0.12, 0, HZ + 0.003], [0.12, 0.42, HZ + 0.003], [-0.12, 0.42, HZ + 0.003]];
+const C_FRONT = [0.36, 0.56, 0.88, 1], C_BACK = [0.55, 0.57, 0.62, 1], C_SIDE = [0.86, 0.78, 0.62, 1], C_ROOF = [0.82, 0.34, 0.28, 1], C_BOT = [0.38, 0.38, 0.42, 1], C_DOOR = [0.30, 0.20, 0.12, 1];
+const FACES = [
+  [[0, 1, 2, 3], C_FRONT], [[5, 4, 7, 6], C_BACK], [[4, 0, 3, 7], C_SIDE], [[7, 3, 8], C_SIDE], [[1, 5, 6, 2], C_SIDE], [[2, 6, 9], C_SIDE],
+  [[3, 2, 9, 8], C_ROOF], [[6, 7, 8, 9], C_ROOF], [[4, 5, 1, 0], C_BOT], [[10, 11, 12, 13], C_DOOR]
+];
+
+// Build every point of the frame in world space, then run it through the pipeline.
+let G = null;
+function build() {
+  const asp = S.vw / S.vh;
+  const M = M4.mul(M4.T(S.ox, S.oy, S.oz), M4.mul(M4.Ry(S.ory * Math.PI / 180), M4.mul(M4.Rx(S.orx * Math.PI / 180), M4.S(S.os))));
+  const Minv = M4.inv(M);
+  const yaw = S.cy * Math.PI / 180, pit = S.cp * Math.PI / 180, tgt = [0, 0.6, 0];
+  const eye = [tgt[0] + S.cd * Math.cos(pit) * Math.sin(yaw), tgt[1] + S.cd * Math.sin(pit), tgt[2] + S.cd * Math.cos(pit) * Math.cos(yaw)];
+  const V = M4.lookAt(eye, tgt, [0, 1, 0]), Vinv = M4.inv(V);
+  const P = S.proj === "persp" ? M4.persp(S.fov * Math.PI / 180, asp, S.near, S.far) : M4.ortho(-S.osz * asp, S.osz * asp, -S.osz, S.osz, S.near, S.far);
+  const pts = [], lines = [], tris = [];
+  const addP = (pw, kind) => { pts.push({ pw, kind }); return pts.length - 1; };
+  const fromObj = o => addP(M4.x3(M, o), "obj"), fromView = v => addP(M4.x3(Vinv, v), "view"), fromWorld = w => addP(w, "world");
+  // house
+  const hi = HOUSE.map(fromObj).concat(DOOR.map(fromObj));
+  for (const [idx, col] of FACES) { const v = idx.map(i => hi[i]); tris.push([v[0], v[1], v[2], col]); if (v.length === 4) tris.push([v[0], v[2], v[3], col]); }
+  // axes
+  if (S.axes) {
+    const o0 = fromObj([0, 0, 0]);
+    [[[0.9, 0, 0], [1, 0.38, 0.38, 1]], [[0, 0.9, 0], [0.45, 0.92, 0.5, 1]], [[0, 0, 0.9], [0.45, 0.65, 1, 1]]].forEach(([d, c]) => lines.push([o0, fromObj(d), c, 0]));
+    const w0 = fromWorld([0, 0, 0]);
+    [[[1.6, 0, 0], [1, 0.38, 0.38, 0.45]], [[0, 1.6, 0], [0.45, 0.92, 0.5, 0.45]], [[0, 0, 1.6], [0.45, 0.65, 1, 0.45]]].forEach(([d, c]) => lines.push([w0, fromWorld(d), c, 0]));
+  }
+  // grid (subdivided so it can bend through the projection)
+  if (S.grid) {
+    const N = 8, SUB = 16, gc = [0.55, 0.60, 0.70, 0.28];
+    for (let i = -N; i <= N; i++) for (const dir of [0, 1]) {
+      let prev = null;
+      for (let k = 0; k <= SUB; k++) {
+        const a = -N + 2 * N * k / SUB, p = dir ? fromWorld([i, 0, a]) : fromWorld([a, 0, i]);
+        if (prev !== null) lines.push([prev, p, gc, 1]); prev = p;
+      }
+    }
+  }
+  // frustum, apex, depth ticks
+  let corners = null, eyeI = fromView([0, 0, 0]);
+  const half = d => S.proj === "persp" ? [d * Math.tan(S.fov * Math.PI / 360) * asp, d * Math.tan(S.fov * Math.PI / 360)] : [S.osz * asp, S.osz];
+  {
+    const c = [];
+    for (const d of [S.near, S.far]) { const [hw, hh] = half(d); for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) c.push(fromView([sx * hw, sy * hh, -d])); }
+    corners = c;
+    if (S.fr) {
+      const fc = [0.95, 0.66, 0.23, 0.95];
+      for (let i = 0; i < 4; i++) { lines.push([c[i], c[(i + 1) % 4], fc, 2]); lines.push([c[4 + i], c[4 + (i + 1) % 4], fc, 2]); lines.push([c[i], c[4 + i], fc, 2]); }
+      if (S.proj === "persp") for (let i = 0; i < 4; i++) lines.push([eyeI, c[i], [0.95, 0.66, 0.23, 0.35], 3]);
+      for (let d = Math.ceil(S.near + 1e-3); d <= S.far; d++) {
+        const [hw, hh] = half(d);
+        lines.push([fromView([-0.18 * hw, -hh, -d]), fromView([0.18 * hw, -hh, -d]), [1, 0.82, 0.32, 1], 2]);
+      }
+    }
+  }
+  // pipeline for every point
+  const VW = S.vw, VH = S.vh;
+  for (const p of pts) {
+    const o = M4.x3(Minv, p.pw), v = M4.x3(V, p.pw), c = M4.x4(P, [v[0], v[1], v[2], 1]), w = c[3];
+    const ok = w > 1e-3;
+    const n = ok ? [c[0] / w, c[1] / w, c[2] / w] : [NaN, NaN, NaN];
+    const s = [(n[0] + 1) / 2 * VW, (n[1] + 1) / 2 * VH, (n[2] + 1) / 2];
+    const big = !ok || Math.abs(n[0]) > 6 || Math.abs(n[1]) > 6 || Math.abs(n[2]) > 6;
+    p.o = o; p.v = v; p.c = c; p.w = w; p.n = n; p.s = s; p.ok = ok && !big;
+    p.inside = Math.abs(c[0]) <= w && Math.abs(c[1]) <= w && Math.abs(c[2]) <= w;
+    p.d4 = ok ? [n[0] * 3, n[1] * 3, n[2] * 3] : [0, 0, 0];
+    p.d5 = ok ? [(s[0] / VW - 0.5) * 6 * asp, (s[1] / VH - 0.5) * 6, (s[2] - 0.5) * 0.8] : [0, 0, 0];
+  }
+  // morph matrices for the two rigid steps
+  const qV = quatFrom(V), tV = [V[12], V[13], V[14]];
+  G = { M, Minv, V, P, eye, pts, lines, tris, corners, eyeI, hi, asp, qV, tV, morphCache: {} };
+}
+function morphMats(t) {
+  const seg = Math.min(Math.floor(t), 4), f = t - seg;
+  if (seg === 0) return M4.mul(M4.T(S.ox * f, S.oy * f, S.oz * f), M4.mul(M4.Ry(S.ory * f * Math.PI / 180), M4.mul(M4.Rx(S.orx * f * Math.PI / 180), M4.S(1 + (S.os - 1) * f))));
+  if (seg === 1) return quatMat(slerpId(G.qV, f), [G.tV[0] * f, G.tV[1] * f, G.tV[2] * f]);
+  return null;
+}
+function disp(p, t, A) {
+  const seg = Math.min(Math.floor(t), 4), f = t - seg;
+  if (seg === 0) return M4.x3(A, p.o);
+  if (seg === 1) return M4.x3(A, p.pw);
+  if (seg === 2) return V3.lerp(p.v, [p.c[0], p.c[1], p.c[2]], f);
+  if (!p.ok && (seg === 4 || f > 0)) return null;
+  if (seg === 3) { const d = 1 + (p.w - 1) * f, k = 1 + 2 * f; return [p.c[0] / d * k, p.c[1] / d * k, p.c[2] / d * k]; }
+  return V3.lerp(p.d4, p.d5, f);
+}
+// frame the lab camera around what matters in each stage
+function frameFor(stage) {
+  if (stage === 0) return { c: [0, 0.55, 0], r: 1.6 };
+  const A = morphMats(stage), pts = G.corners.map(i => G.pts[i]);
+  if (stage <= 2) pts.push(G.pts[G.eyeI], G.pts[G.hi[0]], G.pts[G.hi[9]]);
+  const ds = pts.map(p => disp(p, stage, A)).filter(Boolean);
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  ds.forEach(d => { for (let i = 0; i < 3; i++) { mn[i] = Math.min(mn[i], d[i]); mx[i] = Math.max(mx[i], d[i]); } });
+  const c = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2];
+  return { c, r: Math.max(1, Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) / 2) };
+}
+const lab = { yaw: 0.9, pitch: 0.42, zoom: 1 };
+const labDefault = JSON.stringify(lab);
+function labVP(t, aspect) {
+  const a = Math.min(Math.floor(t), 4), b = Math.min(a + 1, 5), f = t - a;
+  const fa = frameFor(a), fb = f > 0 ? frameFor(b) : fa;
+  const c = V3.lerp(fa.c, fb.c, f), r = fa.r + (fb.r - fa.r) * f;
+  const fov = 0.8, dist = r / Math.sin(fov / 2) * 0.95 * lab.zoom;
+  const eye = [c[0] + dist * Math.cos(lab.pitch) * Math.cos(lab.yaw), c[1] + dist * Math.sin(lab.pitch), c[2] + dist * Math.cos(lab.pitch) * Math.sin(lab.yaw)];
+  return M4.mul(M4.persp(fov, aspect, dist * 0.02, dist * 6), M4.lookAt(eye, c, [0, 1, 0]));
+}
+
+// ---------- drawing ----------
+const TRI = new Float32Array(200 * 7), LIN = new Float32Array(4000 * 7), PTS = new Float32Array(16 * 7);
+function put(buf, n, p, c) { const o = n * 7; buf[o] = p[0]; buf[o + 1] = p[1]; buf[o + 2] = p[2]; buf[o + 3] = c[0]; buf[o + 4] = c[1]; buf[o + 5] = c[2]; buf[o + 6] = c[3]; }
+function drawLab(t, vx, vy, vw, vh, bg) {
+  gl.enable(gl.SCISSOR_TEST); gl.scissor(vx, vy, vw, vh); gl.viewport(vx, vy, vw, vh);
+  gl.clearColor(bg[0], bg[1], bg[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const VP = labVP(t, vw / vh); gl.uniformMatrix4fv(prog.uVP, false, VP);
+  const A = morphMats(t), D = G.pts.map(p => disp(p, t, A));
+  const clipView = t >= 2.5;
+  let n = 0;
+  for (const [a, b, c, col] of G.tris) {
+    if (!D[a] || !D[b] || !D[c]) continue;
+    let cc = col;
+    if (clipView && !(G.pts[a].inside && G.pts[b].inside && G.pts[c].inside)) cc = [col[0] * 0.55 + 0.45, col[1] * 0.45, col[2] * 0.45, 1];
+    put(TRI, n++, D[a], cc); put(TRI, n++, D[b], cc); put(TRI, n++, D[c], cc);
+  }
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+  drawArr(gl.TRIANGLES, TRI, n, 1);
+  n = 0;
+  for (const [a, b, col, grp] of G.lines) {
+    if (!D[a] || !D[b]) continue;
+    if (grp === 3 && t > 2.5) continue;
+    let cc = col;
+    if (grp === 1 && clipView && G.pts[a].inside && G.pts[b].inside) cc = [0.70, 0.76, 0.88, 0.6];
+    put(LIN, n++, D[a], cc); put(LIN, n++, D[b], cc);
+  }
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.depthFunc(gl.LEQUAL);
+  drawArr(gl.LINES, LIN, n, 0);
+  // points: selected vertex (always on top) and the camera position
+  n = 0; gl.disable(gl.DEPTH_TEST);
+  const sp = D[G.hi[S.sel]]; if (sp) put(PTS, n++, sp, [1, 0.85, 0.2, 1]);
+  drawArr(gl.POINTS, PTS, n, 2, Math.max(7, Math.min(12, vh / 50)));
+  n = 0; const ep = t <= 2.5 ? D[G.eyeI] : null; if (ep) put(PTS, n++, ep, [0.95, 0.95, 1, 1]);
+  drawArr(gl.POINTS, PTS, n, 2, Math.max(5, Math.min(9, vh / 70)));
+  gl.depthMask(true); gl.depthFunc(gl.LESS); gl.disable(gl.BLEND);
+  gl.disable(gl.SCISSOR_TEST);
+  return { VP, D };
+}
+// the scene camera's real image, rendered with P·V directly
+function drawInset(x, y, w, h) {
+  gl.enable(gl.SCISSOR_TEST); gl.scissor(x - 1, y - 1, w + 2, h + 2); gl.clearColor(0.95, 0.66, 0.23, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.scissor(x, y, w, h); gl.viewport(x, y, w, h); gl.clearColor(0.10, 0.12, 0.16, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.uniformMatrix4fv(prog.uVP, false, M4.mul(G.P, G.V));
+  let n = 0;
+  for (const [a, b, c, col] of G.tris) { put(TRI, n++, G.pts[a].pw, col); put(TRI, n++, G.pts[b].pw, col); put(TRI, n++, G.pts[c].pw, col); }
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); drawArr(gl.TRIANGLES, TRI, n, 1);
+  n = 0;
+  for (const [a, b, col, grp] of G.lines) if (grp <= 1) { put(LIN, n++, G.pts[a].pw, col); put(LIN, n++, G.pts[b].pw, col); }
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.depthFunc(gl.LEQUAL);
+  drawArr(gl.LINES, LIN, n, 0);
+  gl.disable(gl.DEPTH_TEST); n = 0; put(PTS, n++, G.pts[G.hi[S.sel]].pw, [1, 0.85, 0.2, 1]); drawArr(gl.POINTS, PTS, n, 2, 8);
+  gl.depthMask(true); gl.depthFunc(gl.LESS); gl.disable(gl.BLEND); gl.disable(gl.SCISSOR_TEST);
+}
+
+// ---------- labels + panel text ----------
+const lblEl = $("labels");
+const LBL = ["sel", "cam", "fr", "fr"].map(cls => { const d = document.createElement("div"); d.className = "lbl " + cls; lblEl.appendChild(d); return d; });
+const f2 = v => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
+function coordText(p, stage) {
+  if (stage === 0) return `(${p.o.map(f2).join(", ")})`;
+  if (stage === 1) return `(${p.pw.map(f2).join(", ")})`;
+  if (stage === 2) return `(${p.v.map(f2).join(", ")})`;
+  if (stage === 3) return `(${p.c.map(f2).join(", ")})`;
+  if (!p.ok) return "w ≤ 0: no valid NDC";
+  if (stage === 4) return `(${p.n.map(f2).join(", ")})`;
+  return `(${p.s[0].toFixed(1)} px, ${p.s[1].toFixed(1)} px, depth ${p.s[2].toFixed(4)})`;
+}
+function placeLabels(VP, D, cssW, cssH) {
+  const stage = Math.round(S.t);
+  const items = [[G.hi[S.sel], `v #${S.sel} ${coordText(G.pts[G.hi[S.sel]], stage)}`], [G.eyeI, stage <= 2 ? `camera ${coordText(G.pts[G.eyeI], stage)}` : null],
+    [G.corners[6], `far top-right ${coordText(G.pts[G.corners[6]], stage)}`], [G.corners[0], `near bottom-left ${coordText(G.pts[G.corners[0]], stage)}`]];
+  items.forEach(([i, text], k) => {
+    const d = D[i], el = LBL[k];
+    if (!S.lbl || !text || !d || (k >= 2 && !S.fr)) { el.style.display = "none"; return; }
+    const c = M4.x4(VP, [d[0], d[1], d[2], 1]);
+    if (c[3] <= 0) { el.style.display = "none"; return; }
+    el.style.display = ""; el.textContent = text;
+    el.style.left = ((c[0] / c[3] * 0.5 + 0.5) * cssW) + "px"; el.style.top = ((1 - (c[1] / c[3] * 0.5 + 0.5)) * cssH) + "px";
+  });
+}
+function matText(m) { let s = ""; for (let r = 0; r < 4; r++) { s += [0, 1, 2, 3].map(c => { const v = m[c * 4 + r]; return (Math.abs(v) < 0.005 ? 0 : v).toFixed(2).padStart(6); }).join("") + "\n"; } return s; }
+function panelText() {
+  const p = G.pts[G.hi[S.sel]], stage = Math.round(S.t);
+  const rows = [
+    ["Object", `(${p.o.map(f2).join(", ")}, 1)`],
+    ["World", `(${p.pw.map(f2).join(", ")}, 1)`],
+    ["View", `(${p.v.map(f2).join(", ")}, 1)`],
+    ["Clip", `(${p.c.map(f2).join(", ")})<br><span style="color:var(--muted)">inside if −w ≤ x, y, z ≤ w</span>`],
+    ["NDC", p.ok ? `(${p.n.map(f2).join(", ")})<br><span style="color:var(--muted)">= clip.xyz / ${f2(p.w)}</span>` : "w ≤ 0: behind the camera"],
+    ["Screen", p.ok ? `(${p.s[0].toFixed(1)}, ${p.s[1].toFixed(1)}) px<br>depth ${p.s[2].toFixed(4)}` : "—"]
+  ];
+  $("vt").innerHTML = rows.map(([k, v], i) => `<tr class="${i === stage ? "on" : ""} ${i >= 3 && !p.inside ? "out" : ""}"><td>${k}</td><td>${v}</td></tr>`).join("");
+  $("mM").textContent = matText(G.M); $("mV").textContent = matText(G.V); $("mP").textContent = matText(G.P);
+  $("hudStage").innerHTML = `<b>${STAGES[stage].name}</b> · slider ${S.t.toFixed(2)}`;
+  $("hudW").innerHTML = `vertex #${S.sel}: w = <b>${f2(p.w)}</b> · ${p.inside ? "inside the frustum" : "outside: clipped"}`;
+}
+
+// ---------- lab camera input ----------
+let drag = null;
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener("pointerup", () => drag = null);
+canvas.addEventListener("pointercancel", () => drag = null);
+canvas.addEventListener("pointermove", e => { if (!drag) return; lab.yaw += (e.clientX - drag.x) * 0.006; lab.pitch = Math.max(-1.3, Math.min(1.45, lab.pitch + (e.clientY - drag.y) * 0.006)); drag.x = e.clientX; drag.y = e.clientY; });
+canvas.addEventListener("wheel", e => { e.preventDefault(); lab.zoom = Math.min(4, Math.max(0.25, lab.zoom * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+$("resetLab").addEventListener("click", () => Object.assign(lab, JSON.parse(labDefault)));
+
+// ---------- layout ----------
+let W = 0, H = 0, dprNow = 1, layoutDirty = true, insetRect = null;
+function layout() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (w !== W || h !== H) { W = w; H = h; canvas.width = w; canvas.height = h; layoutDirty = true; }
+  dprNow = dpr;
+  if (!layoutDirty) return; layoutDirty = false;
+  stripEl.style.setProperty("--ar", (canvas.clientWidth / canvas.clientHeight).toFixed(3));
+  const cr = canvas.getBoundingClientRect();
+  for (const t of thumbs) {
+    const r = t.el.getBoundingClientRect();
+    t.rect = [Math.round((r.left - cr.left + 1) * dpr), Math.round((cr.bottom - r.bottom + 1) * dpr), Math.round((r.width - 2) * dpr), Math.round((r.height - 2) * dpr)];
+  }
+  const asp = S.vw / S.vh; let iw = Math.min(260, cr.width * 0.3), ih = iw / asp;
+  if (ih > 190) { ih = 190; iw = ih * asp; }
+  const ix = cr.width - iw - 14, iy = 14 + 18;
+  insetRect = [Math.round(ix * dpr), Math.round((cr.height - iy - ih) * dpr), Math.round(iw * dpr), Math.round(ih * dpr)];
+  const L = $("insetLbl"); L.style.left = ix + "px"; L.style.top = (iy - 18) + "px"; L.textContent = `Camera's image (${S.vw}×${S.vh})`;
+}
+window.addEventListener("resize", () => layoutDirty = true);
+
+// ---------- loop ----------
+let last = performance.now(), frame = 0;
+function render(now) {
+  requestAnimationFrame(render);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (S.playing) { S.t += playDir * dt * 0.45; if (S.t >= 5) { S.t = 5; playDir = -1; } if (S.t <= 0) { S.t = 0; playDir = 1; } $("t").value = S.t; }
+  else if (S.tTarget !== null) { const d = S.tTarget - S.t, step = dt * 2.2; if (Math.abs(d) <= step) { S.t = S.tTarget; S.tTarget = null; } else S.t += Math.sign(d) * step; $("t").value = S.t; }
+  layout(); build(); syncStage();
+  gl.useProgram(prog.p); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  const { VP, D } = drawLab(S.t, 0, 0, W, H, [0.07, 0.08, 0.10]);
+  if (S.strip) for (const t of thumbs) { const [x, y, w, h] = t.rect || [0, 0, 0, 0]; if (w > 4 && h > 4) drawLab(t.i, x, y, w, h, [0.09, 0.10, 0.13]); }
+  if (insetRect) drawInset(...insetRect);
+  placeLabels(VP, D, W / dprNow, H / dprNow);
+  if (frame++ % 4 === 0) panelText();
+}
+try { requestAnimationFrame(render); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>
