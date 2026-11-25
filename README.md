@@ -14,6 +14,7 @@ Open `index.html` to browse the labs. Every lab has two buttons in its top-left 
 | Foundations | Coordinate spaces | `labs/coordinate-spaces/` |
 | Lighting and shadows | Deferred light volumes | `labs/deferred-light-volumes/` |
 | Lighting and shadows | Shadow mapping | `labs/shadow-mapping/` |
+| Lighting and shadows | Image-based lighting (IBL) | `labs/image-based-lighting/` |
 | Screen-space effects | Ambient occlusion (SSAO) | `labs/ssao/` |
 | Screen-space effects | Reflections (SSR) | `labs/ssr/` |
 | Screen-space effects | Subsurface scattering (SSS) | `labs/sss/` |

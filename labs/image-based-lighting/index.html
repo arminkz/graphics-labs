@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image-Based Lighting Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: full-height WebGL viewport with a pipeline-stage strip, instrument panel on the right; stacks on narrow screens. */
+  --bg: #0d0f13;
+  --panel: #151820;
+  --line: #262b36;
+  --text: #dfe3ea;
+  --muted: #8a93a3;
+  --accent: #f0b866;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+.app { display: grid; grid-template-columns: 1fr 380px; height: 100%; }
+.view { position: relative; min-height: 320px; overflow: hidden; }
+canvas#c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas#c:active { cursor: grabbing; }
+.hud { position: absolute; left: 16px; top: 14px; right: 16px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; background: rgba(13,15,19,.82); border: 1px solid var(--line); color: var(--text); }
+.chip b { color: var(--accent); font-weight: 500; }
+.hint { flex-basis: 100%; font-size: 12px; color: #c3c9d4; text-shadow: 0 1px 2px #000; }
+.err { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); background: var(--bg); }
+.strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; justify-content: center; pointer-events: none; }
+.thumb { pointer-events: auto; position: relative; flex: 0 1 132px; min-width: 0; aspect-ratio: var(--ar, 1.6); border: 1px solid #3a4150; border-radius: 3px; background: transparent; padding: 0; cursor: pointer; overflow: hidden; }
+.thumb span { position: absolute; left: 0; right: 0; bottom: 0; font: 500 10.5px/1.25 var(--font-mono); padding: 3px 5px; background: rgba(13,15,19,.85); color: var(--text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb:hover { border-color: #6b7486; }
+.thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 28px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.explain { font-size: 13px; background: #11141a; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0; padding: 10px 12px; margin-top: 8px; }
+.eq { font: 12px/1.6 var(--font-mono); background: #0f1217; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-top: 10px; color: #cfd6e2; overflow-x: auto; white-space: nowrap; }
+.row { display: grid; grid-template-columns: 112px 1fr 58px; align-items: center; gap: 8px; margin: 5px 0; }
+.row label { color: var(--muted); font-size: 12.5px; }
+.row output { font: 12px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.row select { grid-column: span 2; }
+.dim { opacity: .4; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.checks label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.checks input { accent-color: var(--accent); margin-top: 3px; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+button.p { font: 500 12.5px var(--font-body); color: var(--text); background: #1d222c; border: 1px solid #333a48; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+button.p:hover { border-color: var(--accent); }
+button.p.on { border-color: var(--accent); color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font: 12.5px var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 5px; }
+ol b { color: var(--text); font-weight: 500; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 62vh auto; height: auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view">
+    <canvas id="c" aria-label="WebGL view of objects lit by an environment map"></canvas>
+    <div class="hud">
+      <span class="chip" id="hudEnv">environment</span>
+      <span class="chip" id="hudSpec">specular</span>
+      <span class="chip" id="hudReads">reads</span>
+      <span class="chip" id="hudGrid">left → right: roughness 0.05 → 1 · top row: metal · bottom row: plastic</span>
+      <span class="hint">Drag to orbit · scroll or pinch to zoom</span>
+    </div>
+    <div class="strip" id="strip"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <aside>
+    <div>
+      <h1>Image-based lighting lab</h1>
+      <p class="sub">The light source is a picture of the whole surroundings, stored as a cube map. Every direction is a light. Adding up thousands of directions per pixel is too slow, so the sums are done ahead of time and stored in three small textures. At run time a pixel reads them and is done.</p>
+      <div class="eq">color = diffuse × irradiance(N)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + prefiltered(R, roughness)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; × (F0 × A + B)</div>
+    </div>
+
+    <section>
+      <h2>Environment (the light)</h2>
+      <select id="preset" aria-label="Environment">
+        <option value="0" selected>Sunny sky</option>
+        <option value="1">Sunset</option>
+        <option value="2">Studio softboxes</option>
+        <option value="3">Neon night</option>
+        <option value="4">White furnace (the same light from everywhere)</option>
+      </select>
+      <div class="row"><label for="rot">Rotate</label><input id="rot" type="range" min="0" max="360" step="1" value="0"><output id="rotV"></output></div>
+      <div class="row"><label for="expo">Exposure</label><input id="expo" type="range" min="-3" max="3" step="0.1" value="0"><output id="expoV"></output></div>
+      <div class="row"><label for="bgBlur">Blur background</label><input id="bgBlur" type="range" min="0" max="1" step="0.01" value="0"><output id="bgBlurV"></output></div>
+    </section>
+
+    <section>
+      <h2>Object and material</h2>
+      <div class="btns" id="scenes">
+        <button class="p on" type="button" data-s="0">Material grid</button>
+        <button class="p" type="button" data-s="1">One sphere</button>
+        <button class="p" type="button" data-s="2">Torus knot</button>
+      </div>
+      <div class="row" style="margin-top:8px"><label for="color">Base color</label><select id="color"><option value="0" selected>Gold</option><option value="1">Copper</option><option value="2">Red</option><option value="3">Teal</option><option value="4">White</option></select></div>
+      <div class="row" id="rRough"><label for="rough">Roughness</label><input id="rough" type="range" min="0.03" max="1" step="0.01" value="0.35"><output id="roughV"></output></div>
+      <div class="row" id="rMetal"><label for="metal">Metalness</label><input id="metal" type="range" min="0" max="1" step="0.01" value="1"><output id="metalV"></output></div>
+    </section>
+
+    <section>
+      <h2>Diffuse light</h2>
+      <select id="diff" aria-label="Diffuse method">
+        <option value="1" selected>Irradiance cube map</option>
+        <option value="2">Spherical harmonics (9 colors)</option>
+        <option value="0">None</option>
+      </select>
+      <div class="explain" id="exD"></div>
+    </section>
+
+    <section>
+      <h2>Specular light</h2>
+      <select id="spec" aria-label="Specular method">
+        <option value="1">1. Mirror: read the environment once</option>
+        <option value="2">2. Prefiltered map × F0</option>
+        <option value="3" selected>3. Split sum: prefiltered map × BRDF table</option>
+        <option value="4">4. Reference: many samples per pixel</option>
+        <option value="0">None</option>
+      </select>
+      <div class="explain" id="exS"></div>
+      <div class="checks">
+        <label id="compLbl"><input type="checkbox" id="comp"> Energy compensation for rough surfaces (multiple scattering)</label>
+      </div>
+      <div class="row" id="rRefN"><label for="refN">Reference samples</label><input id="refN" type="range" min="4" max="9" step="1" value="6"><output id="refNV"></output></div>
+    </section>
+
+    <section>
+      <h2>Baking the prefiltered map</h2>
+      <div class="row"><label for="preRes">Size</label><select id="preRes"><option value="64">64 × 64 per face</option><option value="128" selected>128 × 128 per face</option><option value="256">256 × 256 per face</option></select></div>
+      <div class="row"><label for="preN">Samples per texel</label><input id="preN" type="range" min="2" max="10" step="1" value="6"><output id="preNV"></output></div>
+      <div class="checks">
+        <label><input type="checkbox" id="pdfLod" checked> Read a blurrier mip for unlikely samples (removes bright speckles)</label>
+      </div>
+      <div class="row" style="margin-top:8px"><label for="prevR">Preview roughness</label><input id="prevR" type="range" min="0" max="1" step="0.01" value="0.4"><output id="prevRV"></output></div>
+    </section>
+
+    <section>
+      <h2>Display</h2>
+      <div class="row"><label for="view">View</label><select id="view">
+        <option value="0">Final image</option>
+        <option value="1">Diffuse only</option>
+        <option value="2">Specular only</option>
+        <option value="10">Environment map (unwrapped)</option>
+        <option value="11">Irradiance (unwrapped)</option>
+        <option value="12">Prefiltered map at the preview roughness</option>
+        <option value="13">BRDF table (red = A, green = B)</option>
+      </select></div>
+      <div class="checks"><label><input type="checkbox" id="stripOn" checked> Show the stages under the scene</label></div>
+    </section>
+
+    <section>
+      <h2>Measured</h2>
+      <dl class="kv">
+        <dt>Texture reads per pixel</dt><dd id="sReads">–</dd>
+        <dt>Bake: environment</dt><dd id="sEnv">–</dd>
+        <dt>Bake: irradiance</dt><dd id="sIrr">–</dd>
+        <dt>Bake: prefiltered map</dt><dd id="sPre">–</dd>
+        <dt>Bake: BRDF table</dt><dd id="sLut">–</dd>
+        <dt>Prefiltered mip levels</dt><dd id="sMips">–</dd>
+        <dt>Memory: environment</dt><dd id="mEnv">–</dd>
+        <dt>Memory: prefiltered map</dt><dd id="mPre">–</dd>
+        <dt>Memory: irradiance cube</dt><dd id="mIrr">–</dd>
+        <dt>Memory: spherical harmonics</dt><dd id="mSH">–</dd>
+        <dt>Memory: BRDF table</dt><dd id="mLut">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Try this</h2>
+      <ol>
+        <li>Click through the stages under the scene, 1 to 7: the light, its two blurred versions, the table, the two terms, and their sum.</li>
+        <li>Step the <b>Specular</b> menu from 1 to 3 and watch the rough spheres on the right. A mirror read is wrong for them, the prefiltered map fixes the blur, and the table adds the bright edges.</li>
+        <li>Switch between <b>3. Split sum</b> and <b>4. Reference</b>. They are close, at a tiny fraction of the texture reads. The largest differences are on rough spheres near their edges.</li>
+        <li>With <b>Sunny sky</b>, turn off <b>Read a blurrier mip</b> and open stage 3. The sun turns into bright dots. Raise <b>Samples per texel</b> and they fade slowly; the checkbox removes them at once.</li>
+        <li>Pick <b>White furnace</b>. The light is the same from everywhere, so a perfect white object would be invisible. The rough metal spheres are darker than the background: energy is lost. Turn on <b>Energy compensation</b> and they vanish.</li>
+        <li>Switch <b>Diffuse</b> between the cube map and spherical harmonics on the plastic row. Nine colors give nearly the same result as the texture.</li>
+        <li>Pick <b>Studio softboxes</b> with the <b>Torus knot</b> and drag <b>Rotate</b>.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let dirty = true;
+
+const EX_D = [
+  "No diffuse light from the environment. Metals are unaffected, because a metal has no diffuse term. The plastic row keeps only its reflection.",
+  "For a matte surface, the light arriving from the whole hemisphere around the normal is added up, weighted by the cosine of the angle. That sum depends only on the normal, so it is stored in a tiny cube map and read once with N. It is so blurry that 32 × 32 texels per face are enough.",
+  "The same hemisphere sum is so smooth that 9 colors describe it almost exactly. The lab projects the environment onto 9 spherical-harmonic basis functions once, and the shader rebuilds the irradiance from them with a short polynomial in N. There is no texture read at all."
+];
+const EX_S = [
+  "No reflection of the environment.",
+  "Reflect the view direction about the normal and read the environment there. This is right only for a perfect mirror. Every sphere looks polished, whatever its roughness.",
+  "A rough surface reflects a whole cone of directions, wider with more roughness. That blur is done ahead of time: one mip level of the prefiltered map per roughness. The pixel reads one level. But the amount is just F0, so the reflection does not get stronger at glancing angles.",
+  "The integral is split into two parts that are stored separately. The prefiltered map holds the blurred light. A small 2D table, indexed by the view angle and roughness, holds how much of it the surface reflects, as a scale A and an offset B for F0. Two reads replace the whole sum.",
+  "No shortcuts: every pixel draws many sample directions from the GGX lobe, reads the environment for each one, and applies the full Fresnel and shadowing terms. This is what the split sum approximates. It is far too slow for a game, but it shows where the approximation is off."
+];
+const PRESETS = ["Sunny sky", "Sunset", "Studio softboxes", "Neon night", "White furnace"];
+const COLORS = [[1.0, 0.77, 0.34], [0.95, 0.64, 0.54], [0.80, 0.10, 0.08], [0.10, 0.55, 0.55], [1, 1, 1]];
+
+// ---------- state + UI ----------
+const state = { scene: 0, preset: 0, rot: 0, expo: 0, bgBlur: 0, color: 0, rough: 0.35, metal: 1, diff: 1, spec: 3, comp: false, refN: 6, preRes: 128, preN: 6, pdfLod: true, prevR: 0.4, view: 0, strip: true };
+let bakeEnvNeeded = true, bakePreNeeded = true;
+const fmt = { rot: v => v + "°", expo: v => (v > 0 ? "+" : "") + v.toFixed(1) + " EV", bgBlur: v => v.toFixed(2), rough: v => v.toFixed(2), metal: v => v.toFixed(2), refN: v => String(1 << v), preN: v => String(1 << v), prevR: v => v.toFixed(2) };
+for (const k in fmt) { const el = $(k), out = $(k + "V"); const upd = () => { state[k] = +el.value; out.textContent = fmt[k](state[k]); if (k === "preN") bakePreNeeded = true; dirty = true; syncUI(); }; el.addEventListener("input", upd); state[k] = +el.value; out.textContent = fmt[k](state[k]); }
+for (const k of ["comp", "pdfLod"]) $(k).addEventListener("change", e => { state[k] = e.target.checked; if (k === "pdfLod") bakePreNeeded = true; dirty = true; syncUI(); });
+for (const k of ["diff", "spec", "color", "preRes", "preset"]) $(k).addEventListener("change", e => {
+  state[k] = +e.target.value;
+  if (k === "preset") { bakeEnvNeeded = true; if (state.preset === 4) { state.color = 4; $("color").value = "4"; } }
+  if (k === "preRes") bakePreNeeded = true;
+  dirty = true; syncUI();
+});
+document.querySelectorAll("#scenes button").forEach(b => b.addEventListener("click", () => { state.scene = +b.dataset.s; document.querySelectorAll("#scenes button").forEach(x => x.classList.toggle("on", x === b)); dirty = true; syncUI(); }));
+const STAGES = [[10, "1 Environment"], [11, "2 Irradiance"], [12, "3 Prefiltered"], [13, "4 BRDF table"], [1, "5 Diffuse"], [2, "6 Specular"], [0, "7 Final"]];
+const stripEl = $("strip");
+const thumbs = STAGES.map(([v, label]) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "thumb"; b.title = "Show " + label.slice(2) + " full size";
+  b.innerHTML = `<span>${label}</span>`; b.addEventListener("click", () => setView(v)); stripEl.appendChild(b);
+  return { v, el: b };
+});
+function setView(v) { state.view = v; $("view").value = String(v); thumbs.forEach(t => t.el.classList.toggle("on", t.v === v)); dirty = true; }
+$("view").addEventListener("change", e => setView(+e.target.value));
+$("stripOn").addEventListener("change", e => { state.strip = e.target.checked; stripEl.style.display = state.strip ? "" : "none"; rectsDirty = true; dirty = true; });
+function reads() {
+  const comp = state.spec === 3 && state.comp;
+  const d = state.diff === 1 || (comp && state.diff !== 2) ? 1 : 0;
+  const s = [0, 1, 1, 2, 1 << state.refN][state.spec];
+  return d + s;
+}
+function syncUI() {
+  $("exD").textContent = EX_D[state.diff]; $("exS").textContent = EX_S[state.spec];
+  $("rRough").classList.toggle("dim", state.scene === 0); $("rMetal").classList.toggle("dim", state.scene === 0);
+  $("compLbl").classList.toggle("dim", state.spec !== 3); $("rRefN").classList.toggle("dim", state.spec !== 4);
+  $("hudGrid").style.display = state.scene === 0 ? "" : "none";
+  $("hudEnv").innerHTML = `light: <b>${PRESETS[state.preset]}</b>`;
+  $("hudSpec").innerHTML = `specular: <b>${["none", "mirror", "prefiltered × F0", "split sum", "reference"][state.spec]}</b>`;
+  const r = reads(); $("hudReads").innerHTML = `<b>${r}</b> texture read${r === 1 ? "" : "s"} per pixel`; $("sReads").textContent = String(r);
+}
+
+// ---------- math ----------
+const nrm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function mul4(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; }
+function persp(fovy, a, n, f) { const t = 1 / Math.tan(fovy / 2), r = new Float32Array(16); r[0] = t / a; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; }
+function lookAt(e, c, u) { const z = nrm([e[0] - c[0], e[1] - c[1], e[2] - c[2]]), x = nrm(cross(u, z)), y = cross(z, x); return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1]); }
+
+// ---------- GL ----------
+const canvas = $("c");
+const gl = canvas.getContext("webgl2", { antialias: true, alpha: false });
+function fail(msg) { const e = $("err"); e.style.display = "grid"; e.textContent = msg; }
+if (!gl) { fail("This demo needs WebGL 2, which your browser or GPU doesn't provide. Try a recent Chrome, Edge, Firefox or Safari."); throw new Error("no webgl2"); }
+if (!gl.getExtension("EXT_color_buffer_float")) { fail("This demo needs to render into floating-point textures (EXT_color_buffer_float), which this browser or GPU doesn't support."); throw new Error("no float targets"); }
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+const HEAD = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D; precision highp samplerCube;
+const float PI = 3.14159265359;
+`;
+const FS_QUAD = `#version 300 es
+out vec2 vUV;
+void main(){ vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); vUV = 0.5 * p + 0.5; gl_Position = vec4(p, 0.0, 1.0); }`;
+// direction for a point on a cube face; p is in [-1, 1]
+const G_FACE = `
+vec3 faceDir(int f, vec2 p){
+  if (f == 0) return vec3(1.0, -p.y, -p.x); if (f == 1) return vec3(-1.0, -p.y, p.x);
+  if (f == 2) return vec3(p.x, 1.0, p.y);   if (f == 3) return vec3(p.x, -1.0, -p.y);
+  if (f == 4) return vec3(p.x, -p.y, 1.0);  return vec3(-p.x, -p.y, -1.0);
+}`;
+// GGX building blocks, shared by the two bakes and the per-pixel reference
+const G_GGX = `
+float radicalInverse(uint b){ b = (b << 16u) | (b >> 16u); b = ((b & 0x55555555u) << 1u) | ((b & 0xAAAAAAAAu) >> 1u); b = ((b & 0x33333333u) << 2u) | ((b & 0xCCCCCCCCu) >> 2u); b = ((b & 0x0F0F0F0Fu) << 4u) | ((b & 0xF0F0F0F0u) >> 4u); b = ((b & 0x00FF00FFu) << 8u) | ((b & 0xFF00FF00u) >> 8u); return float(b) * 2.3283064365386963e-10; }
+vec2 hammersley(int i, int n){ return vec2(float(i) / float(n), radicalInverse(uint(i))); }
+// a half vector drawn from the GGX distribution around N: likely directions come up more often
+vec3 sampleGGX(vec2 Xi, vec3 N, float a){
+  float phi = 2.0 * PI * Xi.x, ct = sqrt((1.0 - Xi.y) / (1.0 + (a * a - 1.0) * Xi.y)), st = sqrt(max(1.0 - ct * ct, 0.0));
+  vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0), T = normalize(cross(up, N)), B = cross(N, T);
+  return normalize(T * cos(phi) * st + B * sin(phi) * st + N * ct);
+}
+float dGGX(float NoH, float a){ float a2 = a * a, d = NoH * NoH * (a2 - 1.0) + 1.0; return a2 / (PI * d * d); }
+float g1(float x, float k){ return x / (x * (1.0 - k) + k); }
+// which mip of the source to read: a sample that stands for a large solid angle reads a blurrier mip
+float lodFor(float pdf, int n, float srcRes){ float saTexel = 4.0 * PI / (6.0 * srcRes * srcRes), saSample = 1.0 / (float(n) * pdf + 1e-4); return max(0.5 * log2(saSample / saTexel) + 1.0, 0.0); }
+`;
+
+// ---- bake 1: the environment itself (procedural, so the lab needs no image files) ----
+const envProg = program(FS_QUAD, HEAD + G_FACE + `
+uniform int uFace, uPreset; in vec2 vUV; out vec4 o;
+float panel(vec3 d, vec3 c, float hw, float hh){
+  c = normalize(c); float z = dot(d, c); if (z <= 0.0) return 0.0;
+  vec3 ax = abs(c.y) > 0.99 ? vec3(1.0, 0.0, 0.0) : normalize(cross(vec3(0.0, 1.0, 0.0), c)), ay = cross(c, ax);
+  vec2 p = abs(vec2(dot(d, ax), dot(d, ay)) / z), e = smoothstep(vec2(hw, hh), vec2(hw, hh) * 0.92, p); return e.x * e.y;
+}
+vec3 radiance(vec3 d){
+  if (uPreset == 4) return vec3(1.0);
+  if (uPreset <= 1) {
+    bool dusk = uPreset == 1;
+    vec3 sunD = normalize(dusk ? vec3(-0.75, 0.10, -0.65) : vec3(0.45, 0.72, 0.52));
+    vec3 zen = dusk ? vec3(0.10, 0.12, 0.30) : vec3(0.18, 0.38, 0.95), hor = dusk ? vec3(1.30, 0.55, 0.25) : vec3(0.95, 1.05, 1.20);
+    vec3 sky = mix(hor, zen, pow(clamp(d.y, 0.0, 1.0), dusk ? 0.35 : 0.5));
+    vec3 c = mix(dusk ? vec3(0.05, 0.04, 0.045) : vec3(0.22, 0.19, 0.16), sky, smoothstep(-0.02, 0.02, d.y));
+    float cs = dot(d, sunD);
+    return c + (dusk ? vec3(1.0, 0.45, 0.15) : vec3(1.0, 0.93, 0.80)) * ((dusk ? 90.0 : 320.0) * smoothstep(0.9993, 0.9997, cs) + (dusk ? 1.6 : 0.6) * pow(max(cs, 0.0), dusk ? 24.0 : 180.0));
+  }
+  if (uPreset == 2) {
+    vec3 c = vec3(0.022) + vec3(0.03) * smoothstep(0.0, -0.5, d.y);
+    c += vec3(1.0, 0.98, 0.95) * 14.0 * panel(d, vec3(0.6, 0.55, 0.6), 0.45, 0.30);
+    c += vec3(0.60, 0.75, 1.0) * 4.0 * panel(d, vec3(-0.85, 0.15, 0.4), 0.50, 0.55);
+    c += vec3(1.0, 0.75, 0.50) * 9.0 * panel(d, vec3(-0.2, 0.35, -0.9), 0.75, 0.10);
+    c += vec3(1.0) * 2.5 * panel(d, vec3(0.0, 1.0, 0.0), 0.55, 0.55);
+    return c;
+  }
+  vec3 c = vec3(0.004, 0.006, 0.012) + vec3(0.01, 0.008, 0.02) * smoothstep(0.3, -0.2, d.y);
+  float az = atan(d.z, d.x);
+  c += vec3(1.0, 0.10, 0.65) * 22.0 * smoothstep(0.022, 0.012, abs(d.y - 0.22)) * smoothstep(1.3, 1.2, abs(az - 0.6));
+  c += vec3(0.10, 0.90, 1.0) * 22.0 * smoothstep(0.03, 0.018, abs(az + 1.9)) * smoothstep(0.55, 0.5, abs(d.y - 0.1));
+  c += vec3(0.10, 0.90, 1.0) * 22.0 * smoothstep(0.03, 0.018, abs(az + 2.5)) * smoothstep(0.40, 0.35, abs(d.y - 0.05));
+  c += vec3(1.0, 0.70, 0.25) * 8.0 * panel(d, vec3(0.5, 0.25, -0.85), 0.16, 0.22);
+  return c;
+}
+void main(){ o = vec4(radiance(normalize(faceDir(uFace, vUV * 2.0 - 1.0))), 1.0); }`);
+
+// ---- bake 2: irradiance. For each normal, add up the whole (small) environment mip, weighted by the cosine ----
+const irrProg = program(FS_QUAD, HEAD + G_FACE + `
+uniform samplerCube uEnv; uniform int uFace; uniform float uSrcLod; in vec2 vUV; out vec4 o;
+void main(){
+  vec3 n = normalize(faceDir(uFace, vUV * 2.0 - 1.0)), sum = vec3(0.0); float wsum = 0.0;
+  for (int f = 0; f < 6; f++) for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+    vec2 p = (vec2(x, y) + 0.5) / 8.0 - 1.0; vec3 d = normalize(faceDir(f, p));
+    float w = max(dot(n, d), 0.0) / pow(1.0 + dot(p, p), 1.5);     // cosine x the solid angle of this texel
+    sum += textureLod(uEnv, d, uSrcLod).rgb * w; wsum += w;
+  }
+  o = vec4(sum / wsum, 1.0);
+}`);
+
+// ---- bake 3: prefiltered specular. One roughness per mip level; blur the environment with the GGX lobe ----
+const preProg = program(FS_QUAD, HEAD + G_FACE + G_GGX + `
+uniform samplerCube uEnv; uniform int uFace, uSamples, uPdfLod; uniform float uRough, uEnvRes; in vec2 vUV; out vec4 o;
+void main(){
+  vec3 N = normalize(faceDir(uFace, vUV * 2.0 - 1.0)), V = N, sum = vec3(0.0); float wsum = 0.0, a = uRough * uRough;   // the big assumption: view = normal = reflection
+  if (uRough < 0.001) { o = vec4(textureLod(uEnv, N, 0.0).rgb, 1.0); return; }
+  for (int i = 0; i < uSamples; i++) {
+    vec3 H = sampleGGX(hammersley(i, uSamples), N, a), L = 2.0 * dot(V, H) * H - V; float NoL = dot(N, L);
+    if (NoL <= 0.0) continue;
+    float NoH = max(dot(N, H), 0.0), pdf = dGGX(NoH, a) / 4.0;
+    sum += textureLod(uEnv, L, uPdfLod == 1 ? lodFor(pdf, uSamples, uEnvRes) : 0.0).rgb * NoL; wsum += NoL;
+  }
+  o = vec4(sum / max(wsum, 1e-4), 1.0);
+}`);
+
+// ---- bake 4: the BRDF table. x = N.V, y = roughness. It does not depend on the environment at all ----
+const lutProg = program(FS_QUAD, HEAD + G_GGX + `
+in vec2 vUV; out vec4 o;
+void main(){
+  float NoV = max(vUV.x, 1e-3), r = vUV.y, a = r * r, k = a / 2.0, A = 0.0, B = 0.0; const int NS = 512;
+  vec3 V = vec3(sqrt(1.0 - NoV * NoV), 0.0, NoV), N = vec3(0.0, 0.0, 1.0);
+  for (int i = 0; i < NS; i++) {
+    vec3 H = sampleGGX(hammersley(i, NS), N, a), L = 2.0 * dot(V, H) * H - V;
+    float NoL = max(L.z, 0.0), NoH = max(H.z, 0.0), VoH = max(dot(V, H), 0.0);
+    if (NoL > 0.0) { float G = g1(NoV, k) * g1(NoL, k), vis = G * VoH / max(NoH * NoV, 1e-5), Fc = pow(1.0 - VoH, 5.0); A += (1.0 - Fc) * vis; B += Fc * vis; }
+  }
+  o = vec4(A / float(NS), B / float(NS), 0.0, 1.0);
+}`);
+
+// ---- run time ----
+const G_SHADE = `
+uniform samplerCube uEnv, uIrr, uPre; uniform sampler2D uLut;
+uniform float uRot, uPreMax, uExposure; uniform vec3 uSH[9]; uniform int uDiff;
+vec3 rotY(vec3 d){ float c = cos(uRot), s = sin(uRot); return vec3(c * d.x + s * d.z, d.y, -s * d.x + c * d.z); }
+// irradiance from 9 spherical-harmonic colors (Ramamoorthi and Hanrahan 2001), already divided by pi
+vec3 shIrradiance(vec3 n){
+  float x = n.x, y = n.y, z = n.z;
+  vec3 e = 0.429043 * uSH[8] * (x * x - y * y) + 0.743125 * uSH[6] * z * z + 0.886227 * uSH[0] - 0.247708 * uSH[6]
+         + 2.0 * 0.429043 * (uSH[4] * x * y + uSH[7] * x * z + uSH[5] * y * z) + 2.0 * 0.511664 * (uSH[3] * x + uSH[1] * y + uSH[2] * z);
+  return max(e, 0.0) / PI;
+}
+vec3 irradiance(vec3 n){ return uDiff == 2 ? shIrradiance(n) : texture(uIrr, n).rgb; }
+vec3 tone(vec3 c){ c *= uExposure; c = clamp(c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0); return pow(c, vec3(1.0 / 2.2)); }
+`;
+const meshProg = program(`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm;
+uniform mat4 uVP; uniform vec4 uModel; out vec3 vW; out vec3 vN;
+void main(){ vW = aPos * uModel.w + uModel.xyz; vN = aNrm; gl_Position = uVP * vec4(vW, 1.0); }`, HEAD + G_GGX + G_SHADE + `
+in vec3 vW; in vec3 vN; out vec4 o;
+uniform vec3 uEye, uAlbedo; uniform float uRough, uMetal, uEnvRes; uniform int uSpec, uComp, uOut, uRefN, uPdfLod;
+void main(){
+  vec3 N = normalize(vN), V = normalize(uEye - vW), R = reflect(-V, N); float NoV = max(dot(N, V), 1e-3), a = uRough * uRough;
+  vec3 F0 = mix(vec3(0.04), uAlbedo, uMetal), base = uAlbedo * (1.0 - uMetal);       // metals: colored reflection, no diffuse
+  vec3 irr = irradiance(rotY(N));
+  vec2 ab = texture(uLut, vec2(NoV, uRough)).rg;                                    // the BRDF table: scale and offset for F0
+  vec3 Fss = F0 * ab.x + ab.y, spec = vec3(0.0), kd = base;
+  if (uSpec == 1) { vec3 F = F0 + (1.0 - F0) * pow(1.0 - NoV, 5.0); spec = textureLod(uEnv, rotY(R), 0.0).rgb * F; kd = base * (1.0 - F); }
+  else if (uSpec == 2) { spec = textureLod(uPre, rotY(R), uRough * uPreMax).rgb * F0; kd = base * (1.0 - F0); }
+  else if (uSpec == 3) {
+    spec = textureLod(uPre, rotY(R), uRough * uPreMax).rgb * Fss; kd = base * (1.0 - Fss);
+    if (uComp == 1) {      // light that bounces more than once between microfacets (Fdez-Aguera 2019)
+      float Ess = ab.x + ab.y, Ems = 1.0 - Ess; vec3 Favg = F0 + (1.0 - F0) / 21.0, FmsEms = Fss * Favg / (1.0 - Ems * Favg) * Ems;
+      spec += FmsEms * irr; kd = base * (1.0 - Fss - FmsEms);
+    }
+  } else if (uSpec == 4) {
+    float k = a / 2.0, jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    for (int i = 0; i < uRefN; i++) {
+      vec2 Xi = hammersley(i, uRefN); Xi.x = fract(Xi.x + jitter);
+      vec3 H = sampleGGX(Xi, N, a), L = 2.0 * dot(V, H) * H - V; float NoL = dot(N, L);
+      if (NoL <= 0.0) continue;
+      float NoH = max(dot(N, H), 1e-4), VoH = max(dot(V, H), 1e-4), pdf = dGGX(NoH, a) * NoH / (4.0 * VoH);
+      vec3 Li = textureLod(uEnv, rotY(L), uPdfLod == 1 ? lodFor(pdf, uRefN, uEnvRes) : 0.0).rgb;
+      vec3 F = F0 + (1.0 - F0) * pow(1.0 - VoH, 5.0);
+      spec += Li * F * (g1(NoV, k) * g1(NoL, k) * VoH / (NoH * NoV));
+    }
+    spec /= float(uRefN); kd = base * (1.0 - Fss);
+  }
+  vec3 diffuse = uDiff == 0 ? vec3(0.0) : kd * irr;
+  o = vec4(tone(uOut == 1 ? diffuse : (uOut == 2 ? spec : diffuse + spec)), 1.0);
+}`);
+// background and the unwrapped debug views
+const viewProg = program(FS_QUAD, HEAD + G_SHADE + `
+in vec2 vUV; out vec4 o;
+uniform int uMode; uniform vec3 uFwd, uRight, uUp; uniform float uLod, uBlur;
+void main(){
+  if (uMode == 4) { o = vec4(pow(vec3(texture(uLut, vUV).rg, 0.0), vec3(1.0 / 2.2)), 1.0); return; }
+  vec3 d, c;
+  if (uMode == 0) { vec2 p = vUV * 2.0 - 1.0; d = rotY(normalize(uFwd + uRight * p.x + uUp * p.y)); c = uBlur > 0.001 ? textureLod(uPre, d, uBlur * uPreMax).rgb : textureLod(uEnv, d, 0.0).rgb; }
+  else { float az = (vUV.x - 0.5) * 2.0 * PI, el = (vUV.y - 0.5) * PI; d = vec3(cos(el) * cos(az), sin(el), cos(el) * sin(az));
+    c = uMode == 1 ? textureLod(uEnv, d, 0.0).rgb : (uMode == 2 ? irradiance(d) : textureLod(uPre, d, uLod).rgb); }
+  o = vec4(tone(c), 1.0);
+}`);
+
+// ---------- textures ----------
+const ENV_RES = 256, IRR_RES = 32, LUT_RES = 128, PRE_LEVELS = 6;
+const fbo = gl.createFramebuffer(), emptyVao = gl.createVertexArray();
+function cubeTex(unit, res, levels) {
+  const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_CUBE_MAP, t);
+  gl.texStorage2D(gl.TEXTURE_CUBE_MAP, levels, gl.RGBA16F, res, res);
+  gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, levels > 1 ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+const envTex = cubeTex(0, ENV_RES, Math.log2(ENV_RES) + 1), irrTex = cubeTex(1, IRR_RES, 1);
+let preTex = null, preRes = 0;
+const lutTex = gl.createTexture(); gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, lutTex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, LUT_RES, LUT_RES);
+for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+const px1 = new Float32Array(4);
+function timed(fn) { const t0 = performance.now(); fn(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, px1); return performance.now() - t0; }   // the 1-pixel read makes the GPU finish before the clock stops
+function toFace(tex, face, level, res) { gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, tex, level); gl.viewport(0, 0, res, res); }
+const mb = b => b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.round(b / 1024) + " KB";
+
+let sh = new Float32Array(27), shOK = true;
+function bakeEnv() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.bindVertexArray(emptyVao); gl.disable(gl.DEPTH_TEST); gl.disable(gl.SCISSOR_TEST);
+  const tEnv = timed(() => {
+    gl.useProgram(envProg.p); gl.uniform1i(envProg.u.uPreset, state.preset);
+    for (let f = 0; f < 6; f++) { toFace(envTex, f, 0, ENV_RES); gl.uniform1i(envProg.u.uFace, f); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_CUBE_MAP, envTex); gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+  });
+  const srcLod = Math.log2(ENV_RES / 16);
+  const tIrr = timed(() => {
+    gl.useProgram(irrProg.p); gl.uniform1i(irrProg.u.uEnv, 0); gl.uniform1f(irrProg.u.uSrcLod, srcLod);
+    for (let f = 0; f < 6; f++) { toFace(irrTex, f, 0, IRR_RES); gl.uniform1i(irrProg.u.uFace, f); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  });
+  // spherical harmonics: read the 16 x 16 mip back and project it onto 9 basis functions on the CPU
+  sh.fill(0); let wsum = 0; const buf = new Float32Array(16 * 16 * 4); gl.getError();
+  for (let f = 0; f < 6 && shOK; f++) {
+    toFace(envTex, f, srcLod, 16); gl.readPixels(0, 0, 16, 16, gl.RGBA, gl.FLOAT, buf);
+    if (gl.getError() !== gl.NO_ERROR) { shOK = false; break; }
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const u = (x + 0.5) / 8 - 1, v = (y + 0.5) / 8 - 1, w = 1 / Math.pow(1 + u * u + v * v, 1.5);
+      const d = nrm([[1, -v, -u], [-1, -v, u], [u, 1, v], [u, -1, -v], [u, -v, 1], [-u, -v, -1]][f]), X = d[0], Y = d[1], Z = d[2];
+      const basis = [0.282095, 0.488603 * Y, 0.488603 * Z, 0.488603 * X, 1.092548 * X * Y, 1.092548 * Y * Z, 0.315392 * (3 * Z * Z - 1), 1.092548 * X * Z, 0.546274 * (X * X - Y * Y)];
+      const o = (y * 16 + x) * 4; wsum += w;
+      for (let k = 0; k < 9; k++) for (let c = 0; c < 3; c++) sh[k * 3 + c] += buf[o + c] * basis[k] * w;
+    }
+  }
+  if (shOK) for (let i = 0; i < 27; i++) sh[i] *= 4 * Math.PI / wsum;
+  else { $("diff").querySelector('option[value="2"]').disabled = true; if (state.diff === 2) { state.diff = 1; $("diff").value = "1"; } }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  $("sEnv").textContent = tEnv.toFixed(0) + " ms"; $("sIrr").textContent = tIrr.toFixed(0) + " ms";
+  $("mEnv").textContent = mb(ENV_RES * ENV_RES * 6 * 8 * 4 / 3); $("mIrr").textContent = mb(IRR_RES * IRR_RES * 6 * 8); $("mSH").textContent = shOK ? "108 bytes" : "not available";
+}
+function bakePre() {
+  if (preRes !== state.preRes) { if (preTex) gl.deleteTexture(preTex); preRes = state.preRes; preTex = cubeTex(2, preRes, PRE_LEVELS); }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.bindVertexArray(emptyVao); gl.disable(gl.DEPTH_TEST); gl.disable(gl.SCISSOR_TEST);
+  const t = timed(() => {
+    gl.useProgram(preProg.p); gl.uniform1i(preProg.u.uEnv, 0); gl.uniform1i(preProg.u.uSamples, 1 << state.preN); gl.uniform1i(preProg.u.uPdfLod, state.pdfLod ? 1 : 0); gl.uniform1f(preProg.u.uEnvRes, ENV_RES);
+    for (let l = 0; l < PRE_LEVELS; l++) {
+      gl.uniform1f(preProg.u.uRough, l / (PRE_LEVELS - 1));      // level 0 = mirror, last level = roughness 1
+      for (let f = 0; f < 6; f++) { toFace(preTex, f, l, preRes >> l); gl.uniform1i(preProg.u.uFace, f); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+    }
+  });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  let texels = 0; for (let l = 0; l < PRE_LEVELS; l++) texels += (preRes >> l) * (preRes >> l) * 6;
+  $("sPre").textContent = t.toFixed(0) + " ms"; $("mPre").textContent = mb(texels * 8);
+  $("sMips").textContent = PRE_LEVELS + " (roughness 0, 0.2 … 1)";
+}
+function bakeLut() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.bindVertexArray(emptyVao); gl.disable(gl.DEPTH_TEST); gl.disable(gl.SCISSOR_TEST);
+  const t = timed(() => { gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, lutTex, 0); gl.viewport(0, 0, LUT_RES, LUT_RES); gl.useProgram(lutProg.p); gl.drawArrays(gl.TRIANGLES, 0, 3); });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  $("sLut").textContent = t.toFixed(0) + " ms (once)"; $("mLut").textContent = mb(LUT_RES * LUT_RES * 8);
+}
+
+// ---------- meshes ----------
+function mesh(pos, nr, idx) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  for (const [loc, data] of [[0, pos], [1, nr]]) { gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0); }
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx), gl.STATIC_DRAW); gl.bindVertexArray(null);
+  return { vao, n: idx.length };
+}
+const sphere = (() => {
+  const P = [], I = [], U = 64, V = 40;
+  for (let j = 0; j <= V; j++) for (let i = 0; i <= U; i++) { const a = i / U * 2 * Math.PI, b = j / V * Math.PI; P.push(Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)); }
+  for (let j = 0; j < V; j++) for (let i = 0; i < U; i++) { const a = j * (U + 1) + i, b = a + U + 1; I.push(a, a + 1, b, a + 1, b + 1, b); }
+  return mesh(P, P, I);
+})();
+const knot = (() => {
+  const S = 260, R = 28, P = [], N = [], I = [], tube = 0.36;
+  const kp = u => { const qu = 1.5 * u, cs = Math.cos(qu); return [(2 + cs) * 0.5 * Math.cos(u), Math.sin(qu) * 0.5, (2 + cs) * 0.5 * Math.sin(u)]; };
+  for (let i = 0; i < S; i++) {
+    const u = i / S * 4 * Math.PI, P1 = kp(u), P2 = kp(u + 0.01), T = [P2[0] - P1[0], P2[1] - P1[1], P2[2] - P1[2]];
+    let Nn = [P2[0] + P1[0], P2[1] + P1[1], P2[2] + P1[2]]; const B = nrm(cross(T, Nn)); Nn = nrm(cross(B, T));
+    for (let j = 0; j < R; j++) {
+      const v = j / R * 2 * Math.PI, cx = -Math.cos(v), cy = Math.sin(v), d = [cx * Nn[0] + cy * B[0], cx * Nn[1] + cy * B[1], cx * Nn[2] + cy * B[2]];
+      P.push(P1[0] + tube * d[0], P1[1] + tube * d[1], P1[2] + tube * d[2]); N.push(...d);
+      const a = i * R + j, b = ((i + 1) % S) * R + j, c = ((i + 1) % S) * R + (j + 1) % R, e = i * R + (j + 1) % R; I.push(a, e, b, b, e, c);
+    }
+  }
+  return mesh(P, N, I);
+})();
+
+// ---------- layout + camera ----------
+let W = 0, H = 0, rectsDirty = true;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (w !== W || h !== H) { W = w; H = h; canvas.width = w; canvas.height = h; stripEl.style.setProperty("--ar", (w / h).toFixed(3)); rectsDirty = true; dirty = true; }
+  if (rectsDirty) {
+    rectsDirty = false;
+    const cr = canvas.getBoundingClientRect(), sx = W / cr.width, sy = H / cr.height;
+    for (const t of thumbs) { const r = t.el.getBoundingClientRect(); t.rect = [Math.round((r.left - cr.left + 1) * sx), Math.round((cr.bottom - r.bottom + 1) * sy), Math.round((r.width - 2) * sx), Math.round((r.height - 2) * sy)]; }
+  }
+}
+window.addEventListener("resize", () => { rectsDirty = true; dirty = true; });
+const cam = { yaw: Math.PI / 2, pitch: 0.1, dist: 12 };
+let drag = null; const pointers = new Map();
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); drag = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); if (!pointers.size) drag = null; });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); drag = null; });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return; dirty = true;
+  if (pointers.size === 2 && pointers.has(e.pointerId)) {
+    const [a, b] = [...pointers.values()]; const d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [p, q] = [...pointers.values()]; const d1 = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d0 > 0 && d1 > 0) cam.dist = Math.min(30, Math.max(2.2, cam.dist * d0 / d1));
+    return;
+  }
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  cam.yaw += dx * 0.006; cam.pitch = Math.max(-1.45, Math.min(1.45, cam.pitch + dy * 0.006));
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(30, Math.max(2.2, cam.dist * Math.exp(e.deltaY * 0.001))); dirty = true; }, { passive: false });
+
+// ---------- frame ----------
+const FOV = 0.7;
+function shadeUniforms(P) {
+  const u = P.u;
+  gl.uniform1i(u.uEnv, 0); gl.uniform1i(u.uIrr, 1); gl.uniform1i(u.uPre, 2); gl.uniform1i(u.uLut, 3);
+  gl.uniform1f(u.uRot, state.rot * Math.PI / 180); gl.uniform1f(u.uPreMax, PRE_LEVELS - 1); gl.uniform1f(u.uExposure, Math.pow(2, state.expo));
+  gl.uniform3fv(u.uSH, sh); gl.uniform1i(u.uDiff, state.diff);
+}
+function drawView(view, x, y, w, h, C) {
+  gl.viewport(x, y, w, h); gl.scissor(x, y, w, h);
+  const th = Math.tan(FOV / 2), asp = w / h;
+  gl.disable(gl.DEPTH_TEST); gl.useProgram(viewProg.p); shadeUniforms(viewProg); gl.bindVertexArray(emptyVao);
+  const u = viewProg.u;
+  gl.uniform1i(u.uMode, view >= 10 ? view - 9 : 0); gl.uniform1f(u.uLod, state.prevR * (PRE_LEVELS - 1)); gl.uniform1f(u.uBlur, state.bgBlur);
+  if (view === 11 && state.diff === 0) gl.uniform1i(u.uDiff, 1);
+  gl.uniform3fv(u.uFwd, C.f); gl.uniform3f(u.uRight, C.r[0] * th * asp, C.r[1] * th * asp, C.r[2] * th * asp); gl.uniform3f(u.uUp, C.u[0] * th, C.u[1] * th, C.u[2] * th);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  if (view >= 10) return;
+  gl.enable(gl.DEPTH_TEST); gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(meshProg.p); shadeUniforms(meshProg); const m = meshProg.u;
+  gl.uniformMatrix4fv(m.uVP, false, mul4(persp(FOV, asp, 0.1, 100), C.view)); gl.uniform3fv(m.uEye, C.eye);
+  gl.uniform3fv(m.uAlbedo, COLORS[state.color]); gl.uniform1f(m.uEnvRes, ENV_RES);
+  gl.uniform1i(m.uSpec, state.spec); gl.uniform1i(m.uComp, state.comp ? 1 : 0); gl.uniform1i(m.uOut, view); gl.uniform1i(m.uRefN, 1 << state.refN); gl.uniform1i(m.uPdfLod, state.pdfLod ? 1 : 0);
+  if (state.scene === 0) {
+    gl.bindVertexArray(sphere.vao);
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 7; c++) {
+      gl.uniform4f(m.uModel, (c - 3) * 1.25, r === 0 ? 0.65 : -0.65, 0, 0.5); gl.uniform1f(m.uRough, 0.05 + 0.95 * c / 6); gl.uniform1f(m.uMetal, r === 0 ? 1 : 0);
+      gl.drawElements(gl.TRIANGLES, sphere.n, gl.UNSIGNED_INT, 0);
+    }
+  } else {
+    const M = state.scene === 1 ? sphere : knot; gl.bindVertexArray(M.vao);
+    gl.uniform4f(m.uModel, 0, 0, 0, state.scene === 1 ? 2.2 : 1.6); gl.uniform1f(m.uRough, state.rough); gl.uniform1f(m.uMetal, state.metal);
+    gl.drawElements(gl.TRIANGLES, M.n, gl.UNSIGNED_INT, 0);
+  }
+}
+function frame() {
+  requestAnimationFrame(frame);
+  resize();
+  if (!dirty) return; dirty = false;
+  if (bakeEnvNeeded) { bakeEnvNeeded = false; bakeEnv(); bakePreNeeded = true; }
+  if (bakePreNeeded) { bakePreNeeded = false; bakePre(); }
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_CUBE_MAP, envTex); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_CUBE_MAP, irrTex);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_CUBE_MAP, preTex); gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, lutTex);
+  const eye = [cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw), cam.dist * Math.sin(cam.pitch), cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw)];
+  const f = nrm([-eye[0], -eye[1], -eye[2]]), r = nrm(cross(f, [0, 1, 0])), up = cross(r, f);
+  const C = { eye, f, r, u: up, view: lookAt(eye, [0, 0, 0], [0, 1, 0]) };
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.enable(gl.SCISSOR_TEST);
+  drawView(state.view, 0, 0, W, H, C);
+  if (state.strip) for (const t of thumbs) { const [x, y, w, h] = t.rect || [0, 0, 0, 0]; if (w > 4 && h > 4) drawView(t.v, x, y, w, h, C); }
+  gl.disable(gl.SCISSOR_TEST);
+}
+try { bakeLut(); syncUI(); setView(0); resize(); requestAnimationFrame(frame); }
+catch (e) { fail("Something went wrong starting WebGL: " + e.message); console.error(e); }
+</script>
+<script src="../../shared/lab-nav.js" data-tutorial="tutorial.html" defer></script>
+</body>
+</html>

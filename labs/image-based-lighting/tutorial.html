@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image-based lighting: a walkthrough of the lab</title>
+<script>if (window.self !== window.top) document.documentElement.classList.add("in-panel");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/tutorial.css">
+</head>
+<body>
+<nav class="page-nav"><a href="index.html#tutorial">Open the lab with this tutorial</a><a href="../../index.html#image-based-lighting">All labs</a></nav>
+<main class="tutorial">
+<h1>Image-based lighting: a walkthrough of the lab</h1>
+<p>Each step says what to look at in the lab. The thumbnails under the scene are numbered 1 to 7.</p>
+<p><span class="diagram-wrap"><img class="diagram" alt="The three baked textures of image-based lighting" src="image-based-lighting-diagram.svg" /></span></p>
+<h2>The one idea</h2>
+<p>With a point light, each pixel evaluates the lighting formula once. With an environment map, light arrives from every direction, so the pixel would have to add up the formula over the whole hemisphere. Doing that sum per pixel is far too slow.</p>
+<p>The fix is to do the sums ahead of time and store the results in textures. At run time a pixel only reads them.</p>
+<pre><code>color = diffuse × irradiance(N)
+      + prefiltered(R, roughness) × (F0 × A + B)
+</code></pre>
+<h2>Step 0: The environment (stage 1)</h2>
+<p>The environment is a cube map that stores the light arriving from each direction. It must be HDR. In the lab's sunny sky, the sky is around 1 and the sun disc is 320. If the texture clamped at 1, the sun would light the scene no more than a patch of sky does.</p>
+<p>The lab draws its environments with a shader, so it needs no image files.</p>
+<h2>Step 1: Diffuse light (stage 2)</h2>
+<p>A matte surface collects light from the whole hemisphere around its normal, weighted by the cosine of the angle. The result depends only on the normal N, so it fits in a cube map indexed by N.</p>
+<p>The bake loops over the environment for each output direction:</p>
+<pre><code class="language-glsl">float w = max(dot(n, d), 0.0) / pow(1.0 + dot(p, p), 1.5);   // cosine x solid angle of the texel
+sum += textureLod(uEnv, d, uSrcLod).rgb * w;  wsum += w;
+</code></pre>
+<p>The result is very blurry, so it can be tiny. The lab reads a 16 × 16 mip of the environment and writes 32 × 32 texels per face. The section at the end of this page explains the bake in detail.</p>
+<h3>Spherical harmonics</h3>
+<p>That blurry function is so smooth that 9 colors describe it almost exactly. The lab projects the environment onto 9 basis functions once, on the CPU. The shader then rebuilds the irradiance with a short polynomial in N, with no texture read.</p>
+<p><em>Try it:</em> switch the <strong>Diffuse</strong> menu between the cube map and spherical harmonics and watch the plastic row.</p>
+<h2>Step 2: Specular light</h2>
+<p>Specular is harder. The reflected light depends on N, the view direction V, the roughness and the base reflectance F0. That is too many inputs for one texture.</p>
+<p>The split-sum method (Karis, 2013) approximates the one sum as a product of two smaller ones:</p>
+<ul>
+<li>the average light inside the reflection lobe, and</li>
+<li>how much light the surface reflects in total.</li>
+</ul>
+<h3>The prefiltered map (stage 3)</h3>
+<p>A rough surface reflects a cone of directions, and the cone is wider with more roughness. The bake blurs the environment with that cone and stores one roughness per mip level. The lab has 6 levels, for roughness 0, 0.2, and so on up to 1.</p>
+<p>The cone's shape also depends on the view angle, which is not known at bake time. So the bake makes a big assumption: the view direction, the normal and the reflection direction are all the same.</p>
+<pre><code class="language-glsl">vec3 N = dir, V = N;
+vec3 H = sampleGGX(hammersley(i, uSamples), N, a);   // likely half vectors come up more often
+vec3 L = 2.0 * dot(V, H) * H - V;
+sum += textureLod(uEnv, L, lod).rgb * NoL;  wsum += NoL;
+</code></pre>
+<p><strong>The speckle fix.</strong> With few samples, some land on the sun and some miss, so the result has bright dots. The fix is to read a blurrier mip of the environment for samples that stand for a large solid angle.</p>
+<p><em>Try it:</em> with <strong>Sunny sky</strong>, turn off <strong>Read a blurrier mip</strong> and open stage 3. Then raise <strong>Samples per texel</strong>: the dots fade slowly, while the checkbox removes them at once.</p>
+<h3>The BRDF table (stage 4)</h3>
+<p>The second sum has no light in it. Fresnel is <code>F0 + (1 − F0)(1 − V·H)^5</code>, so F0 can be pulled out, and the sum becomes <code>F0 × A + B</code>. A and B depend only on the view angle N·V and the roughness, so they fit in a small 2D texture.</p>
+<p>Because the table contains no light, it is baked once and works for every environment.</p>
+<h3>At run time</h3>
+<pre><code class="language-glsl">vec3 R     = reflect(-V, N);
+vec3 light = textureLod(uPre, R, roughness * maxMip).rgb;   // blurred light
+vec2 ab    = texture(uLut, vec2(NoV, roughness)).rg;        // how much is reflected
+vec3 spec  = light * (F0 * ab.x + ab.y);
+</code></pre>
+<p>That is two texture reads, in place of hundreds of samples.</p>
+<p><em>Try it:</em> step the <strong>Specular</strong> menu from 1 to 3 and watch the rough spheres on the right. A mirror read is wrong for them, the prefiltered map fixes the blur, and the table adds the bright edges.</p>
+<h2>Step 3: Metal and plastic</h2>
+<p>One pair of lines covers both rows of the grid:</p>
+<pre><code class="language-glsl">vec3 F0   = mix(vec3(0.04), albedo, metal);   // plastic reflects 4%, metal reflects its color
+vec3 base = albedo * (1.0 - metal);           // metal has no diffuse light
+</code></pre>
+<p>Diffuse light is then scaled by what specular did not take: <code>base * (1 − (F0 × A + B))</code>.</p>
+<h2>Where the approximation is off</h2>
+<p>Set <strong>Specular</strong> to <strong>4. Reference</strong>. Every pixel then draws many samples and applies the full formula.</p>
+<ul>
+<li>Under uniform light (the white furnace), split sum and the reference matched in a test run.</li>
+<li>Under real lighting they matched at the center of a sphere and differed on rough spheres near their edges. That is where the view direction is far from the normal, so the bake's assumption is most wrong.</li>
+</ul>
+<h2>Energy compensation</h2>
+<p>The table only counts light that bounces once off the microscopic surface. On a rough surface, some light bounces several times, and that light is missing.</p>
+<p>The white furnace shows it. The light is the same from everywhere, so a white object that reflects everything should be invisible. Rough metal spheres come out darker than the background.</p>
+<p><em>Try it:</em> pick <strong>White furnace</strong>, then turn on <strong>Energy compensation</strong>. It estimates the missing light from A and B and adds it back, and the spheres vanish.</p>
+<h2>What it costs</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Size in the lab</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Environment, 256 per face with mips</td>
+<td>4.0 MB</td>
+</tr>
+<tr>
+<td>Prefiltered map, 128 per face, 6 levels</td>
+<td>1.0 MB</td>
+</tr>
+<tr>
+<td>Irradiance cube, 32 per face</td>
+<td>48 KB</td>
+</tr>
+<tr>
+<td>Spherical harmonics</td>
+<td>108 bytes</td>
+</tr>
+<tr>
+<td>BRDF table, 128 × 128</td>
+<td>128 KB</td>
+</tr>
+</tbody>
+</table></div>
+<p>Per pixel, split sum with the irradiance cube needs 3 texture reads. The reference at 64 samples needs 65.</p>
+<p>The lab was tested only in headless Chrome with software rendering, so the bake times in its Measured list will be different on a real GPU.</p>
+<h2>What real engines add</h2>
+<ul>
+<li><strong>Captured light:</strong> HDR photographs, or the game's own sky and scene rendered into a cube.</li>
+<li><strong>Local probes:</strong> many small environment maps placed around a level, blended by position, so that a room reflects its own walls.</li>
+<li><strong>Screen-space reflections on top:</strong> nearby objects come from the screen, and the environment fills in the rest.</li>
+<li><strong>Occlusion:</strong> a surface in a crevice should not reflect the open sky, so the result is darkened by an occlusion term.</li>
+</ul>
+<h2>The whole pipeline in short</h2>
+<p><strong>Once per environment:</strong> bake the irradiance map (or 9 colors) and the prefiltered map.</p>
+<p><strong>Once ever:</strong> bake the BRDF table.</p>
+<p><strong>Per pixel:</strong> read irradiance with N, read the prefiltered map with R and roughness, read the table with N·V and roughness, and add diffuse and specular.</p>
+<hr />
+<h1>How the irradiance map is calculated</h1>
+<p>Each texel of the irradiance map answers one question: if a matte surface faced this direction, how much light would it receive in total? To answer it, you add up the entire environment, with each incoming direction weighted by how directly it hits the surface.</p>
+<h2>The formula</h2>
+<p>For a surface normal n:</p>
+<pre><code>E(n) = sum over all directions d of   L(d) × max(n · d, 0) × (solid angle of d)
+</code></pre>
+<ul>
+<li><code>L(d)</code> is the environment's color in direction d.</li>
+<li><code>max(n · d, 0)</code> is the cosine weight. Light from straight ahead counts fully, light from the side counts little, and light from behind counts as zero.</li>
+<li>The solid angle is how much of the sphere that sample covers.</li>
+</ul>
+<p>The map stores <code>E(n) / π</code>, because the matte (Lambert) formula is <code>albedo / π × E</code>. The shader can then just multiply the texel by the albedo.</p>
+<h2>How the lab does the sum</h2>
+<p>The output is a small cube map. For every texel of it, the shader takes that texel's direction as n and loops over all texels of the environment:</p>
+<pre><code class="language-glsl">for (int f = 0; f &lt; 6; f++) for (int y = 0; y &lt; 16; y++) for (int x = 0; x &lt; 16; x++) {
+  vec2 p = (vec2(x, y) + 0.5) / 8.0 - 1.0;          // position on the face, -1 to 1
+  vec3 d = normalize(faceDir(f, p));                // direction of this environment texel
+  float w = max(dot(n, d), 0.0) / pow(1.0 + dot(p, p), 1.5);
+  sum += textureLod(uEnv, d, uSrcLod).rgb * w;  wsum += w;
+}
+o = vec4(sum / wsum, 1.0);
+</code></pre>
+<p>Three details in that code matter:</p>
+<ul>
+<li><strong>The solid angle term.</strong> Texels of a cube map do not cover equal parts of the sphere. A texel in the middle of a face covers more than one near a corner, which is farther from the center and seen at a slant. The factor <code>1 / (1 + u² + v²)^1.5</code> is that correction. Without it, the corners of the cube would count too much.</li>
+<li><strong>Dividing by the sum of the weights.</strong> The exact sum of all cosine weights over a hemisphere is π, so dividing by <code>wsum</code> is the division by π. Using the measured sum has one advantage: a uniform environment of value 1 gives exactly 1, with no rounding error from the grid.</li>
+<li><strong>Reading a small mip.</strong> The loop does not read the full 256 × 256 environment. It reads the 16 × 16 mip level, which is 1,536 texels in total. The cosine weight is so wide that averaging the environment first barely changes the answer. The mip chain is built by averaging, so a small bright sun keeps its total energy.</li>
+</ul>
+<h2>Why the result is so blurry</h2>
+<p>Every output texel averages half of the whole sphere, and two nearby normals share almost all of that half. So neighboring texels are nearly identical, and the map has no fine detail. That is why 32 × 32 per face is enough, and why 9 spherical-harmonic colors can replace it.</p>
+<h2>The cost</h2>
+<p>The lab's bake is 32 × 32 × 6 output texels, each summing 1,536 samples, which is about 9.4 million texture reads. It runs once per environment. In a software-rendered test it took 266 ms, and a real GPU should be much faster.</p>
+<h2>The other common way</h2>
+<p>Many engines use random sampling instead: for each output texel, pick a few hundred random directions in the hemisphere and average them. It is the same sum, estimated with fewer samples. With a small, very bright sun it gives noisy results unless you also read from a blurred mip, which is the same trick the lab uses for the prefiltered map.</p>
+</main>
+</body>
+</html>
